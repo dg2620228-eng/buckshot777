@@ -1,0 +1,3403 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>BUCKSHOT ROULETTE 3D // 벅샷 룰렛</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Mono:wght@400;600;700&family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --crt-green: #39ff14;
+      --crt-amber: #ffb000;
+      --blood-red: #ff2a2a;
+      --blank-blue: #2997ff;
+    }
+
+    * {
+      box-sizing: border-box;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #030405;
+      color: #d6dade;
+      font-family: 'Noto Sans KR', 'IBM Plex Mono', sans-serif;
+    }
+
+    .font-mono-crt { font-family: 'IBM Plex Mono', 'Noto Sans KR', monospace; }
+    .font-title { font-family: 'Black Han Sans', 'Noto Sans KR', sans-serif; letter-spacing: 0.05em; }
+
+    /* 100% Fullscreen WebGL Canvas */
+    #webgl-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100vw;
+      height: 100vh;
+      display: block;
+      z-index: 1;
+    }
+
+    /* Subtle CRT Scanline & Vignette */
+    .vhs-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 80;
+      background:
+        radial-gradient(circle at center, transparent 62%, rgba(0, 0, 0, 0.82) 100%),
+        repeating-linear-gradient(0deg, rgba(0,0,0,0.12) 0px, rgba(0,0,0,0.12) 1px, transparent 1px, transparent 3px);
+    }
+
+    /* Compact Translucent Terminal Panels */
+    .hud-glass {
+      background: rgba(8, 11, 10, 0.78);
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(57, 255, 20, 0.25);
+      border-radius: 6px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.75);
+    }
+
+    /* Screen Shake */
+    @keyframes camShake {
+      0%, 100% { transform: translate(0, 0); }
+      15% { transform: translate(-14px, 10px); }
+      30% { transform: translate(12px, -11px); }
+      45% { transform: translate(-10px, -7px); }
+      60% { transform: translate(9px, 8px); }
+      75% { transform: translate(-6px, 4px); }
+    }
+    .shake-now { animation: camShake 0.42s cubic-bezier(0.36, 0.07, 0.19, 0.97); }
+
+    /* Neon Slow-Blinking Steal / Target Prompt */
+    @keyframes neonSlowBlink {
+      0%, 100% {
+        opacity: 1;
+        text-shadow: 0 0 6px rgba(255, 42, 42, 0.95), 0 0 16px rgba(255, 42, 42, 0.7);
+        box-shadow: 0 0 12px rgba(255, 42, 42, 0.55), inset 0 0 8px rgba(255, 42, 42, 0.25);
+      }
+      50% {
+        opacity: 0.35;
+        text-shadow: 0 0 2px rgba(255, 42, 42, 0.35);
+        box-shadow: 0 0 3px rgba(255, 42, 42, 0.18);
+      }
+    }
+    .neon-steal-prompt {
+      font-family: 'IBM Plex Mono', 'Noto Sans KR', monospace;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      color: #ffccd5;
+      background: rgba(20, 6, 10, 0.88);
+      border: 1px solid rgba(255, 42, 42, 0.9);
+      border-radius: 9999px;
+      padding: 4px 12px;
+      animation: neonSlowBlink 2.4s ease-in-out infinite;
+    }
+
+    /* Compact Bottom Item Slots */
+    .compact-slot {
+      width: 44px;
+      height: 44px;
+      background: rgba(10, 12, 14, 0.85);
+      border: 1px solid #2b3138;
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: all 0.15s ease;
+    }
+    @media (max-width: 640px) {
+      .compact-slot { width: 38px; height: 38px; }
+    }
+    .compact-slot.has-item {
+      cursor: pointer;
+      background: linear-gradient(180deg, #1b2026 0%, #0e1114 100%);
+      border-color: #495360;
+    }
+    .compact-slot.has-item:hover {
+      transform: translateY(-3px);
+      border-color: var(--crt-amber);
+    }
+    .compact-slot.selected-item {
+      border-color: var(--crt-green) !important;
+      box-shadow: 0 0 12px rgba(57, 255, 20, 0.65);
+      transform: translateY(-4px);
+    }
+    .compact-slot.stealable {
+      border-color: var(--blood-red) !important;
+      animation: pulseSteal 0.8s infinite alternate;
+      cursor: pointer !important;
+    }
+    @keyframes pulseSteal {
+      from { box-shadow: 0 0 4px rgba(255, 42, 42, 0.4); }
+      to { box-shadow: 0 0 14px rgba(255, 42, 42, 0.95); transform: scale(1.08); }
+    }
+
+    /* Charge Pips & Heal Flash */
+    .pip {
+      width: 12px;
+      height: 18px;
+      border-radius: 2px;
+      background: #111f14;
+      border: 1px solid #26422b;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      color: #26422b;
+      transition: all 0.2s ease;
+    }
+    .pip.on {
+      background: #194420;
+      border-color: var(--crt-green);
+      color: var(--crt-green);
+      box-shadow: 0 0 6px rgba(57, 255, 20, 0.55);
+    }
+    .pip.cut {
+      border-color: var(--blood-red);
+      color: var(--blood-red);
+      box-shadow: 0 0 8px rgba(255, 42, 42, 0.8);
+    }
+    @keyframes pipHealGlow {
+      0% { transform: scale(1.35); background: #39ff14; color: #050a06; box-shadow: 0 0 16px #39ff14; }
+      100% { transform: scale(1); }
+    }
+    .pip.healed {
+      animation: pipHealGlow 0.7s ease-out;
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: #0a0c0e; }
+    ::-webkit-scrollbar-thumb { background: #333a42; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <!-- 100% Fullscreen 3D WebGL Viewport -->
+  <canvas id="webgl-canvas"></canvas>
+
+  <!-- VHS Scanline & Vignette -->
+  <div class="vhs-overlay"></div>
+
+  <!-- Screen Flash Overlay -->
+  <div id="flash-overlay" class="fixed inset-0 pointer-events-none z-50 opacity-0 transition-opacity duration-200"></div>
+
+  <!-- =========================================================
+       1. START MENU & ONLINE LOBBY
+  ========================================================= -->
+  <div id="menu-screen" class="fixed inset-0 z-30 flex items-center justify-center p-3 bg-black/55 backdrop-blur-[2px]">
+    <div class="max-w-xl w-full bg-[#0d1013]/95 border-2 border-[#2b3139] rounded-xl p-5 sm:p-6 shadow-[0_0_70px_rgba(0,0,0,0.95)] max-h-[92vh] overflow-y-auto">
+      <div class="flex items-center justify-between border-b border-[#22272d] pb-2.5 mb-4 text-[11px] font-mono-crt text-neutral-400">
+        <span class="flex items-center gap-2">
+          <span class="w-2 h-2 rounded-full bg-red-600 animate-ping"></span>
+          VOLTA STANDARD ELECTRONICS // 12-GAUGE
+        </span>
+        <span id="online-status-badge" class="text-amber-400">ONLINE: CONNECTING...</span>
+      </div>
+
+      <div class="text-center mb-4">
+        <div class="font-mono-crt text-[10px] tracking-[0.35em] text-amber-500 uppercase">DOUBLE OR NOTHING</div>
+        <h1 class="font-title text-4xl sm:text-5xl text-white mt-0.5 drop-shadow-[0_4px_14px_rgba(255,42,42,0.45)]">
+          BUCKSHOT <span class="text-red-500">ROULETTE</span>
+        </h1>
+      </div>
+
+      <!-- Waiver Name -->
+      <div class="bg-[#08090b] border border-[#252a30] rounded-lg px-3 py-2 mb-3.5 flex items-center justify-between gap-3">
+        <label class="text-[11px] font-mono-crt text-neutral-400 shrink-0">서명 (닉네임)</label>
+        <input id="nickname-input" type="text" maxlength="12" value="PLAYER"
+          class="w-full text-right bg-transparent border-b border-amber-500/60 focus:border-amber-400 text-amber-400 font-mono-crt font-bold text-sm py-0.5 outline-none uppercase" />
+      </div>
+
+      <!-- Mode Tabs -->
+      <div class="grid grid-cols-2 gap-2 mb-3.5 font-mono-crt text-xs">
+        <button id="mode-tab-sp" onclick="switchMenuTab('sp')"
+          class="py-2.5 rounded-lg bg-red-600 text-white font-bold border border-red-400 shadow">
+          [ 1P ] 싱글플레이 (AI 딜러)
+        </button>
+        <button id="mode-tab-mp" onclick="switchMenuTab('mp')"
+          class="py-2.5 rounded-lg bg-[#15191e] text-neutral-300 hover:text-white border border-[#2e353f]">
+          [ ONLINE ] 비밀번호 대전방
+        </button>
+      </div>
+
+      <!-- 1P Panel -->
+      <div id="panel-sp" class="bg-[#12151a] border border-[#282e36] rounded-lg p-4 space-y-3">
+        <div class="text-sm font-bold text-white">원작 3라운드 데스매치 (vs DEALER)</div>
+        <p class="text-xs text-neutral-400 leading-relaxed">
+          • <strong>1R:</strong> 체력 2칸 · 순수 수싸움<br>
+          • <strong>2R:</strong> 체력 4칸 · 장전마다 상자에서 아이템 2개 자동 지급<br>
+          • <strong>3R (서든데스):</strong> 체력 5칸 · 아이템 4개 자동 지급 · 체력 2칸 이하 시 회복 차단
+        </p>
+        <button onclick="startSingleplayer()"
+          class="w-full py-3 bg-gradient-to-r from-red-700 to-red-600 hover:from-red-600 hover:to-red-500 text-white font-bold rounded-lg text-sm tracking-wide shadow-lg">
+          딜러와 대결 시작 ▶
+        </button>
+      </div>
+
+      <!-- MP Online Password Room Panel -->
+      <div id="panel-mp" class="hidden space-y-3">
+        <div class="bg-[#12151a] border border-[#282e36] rounded-lg p-3">
+          <div class="text-[11px] font-mono-crt text-amber-400 font-bold mb-2">+ 새 방 만들기 (비밀번호 설정 · 실시간 공유)</div>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+            <input id="create-room-title" type="text" maxlength="14" placeholder="방 제목"
+              class="bg-[#080a0c] border border-[#2c323a] rounded px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400" />
+            <input id="create-room-pw" type="password" maxlength="12" placeholder="비밀번호 (필수)"
+              onkeydown="if(event.key==='Enter') createOnlineRoom()"
+              class="bg-[#080a0c] border border-[#2c323a] rounded px-2.5 py-1.5 text-xs text-white outline-none focus:border-amber-400" />
+            <button onclick="createOnlineRoom()"
+              class="bg-amber-500 hover:bg-amber-400 text-black font-bold rounded px-3 py-1.5 text-xs font-mono-crt">
+              방 생성
+            </button>
+          </div>
+        </div>
+
+        <div class="bg-[#12151a] border border-[#282e36] rounded-lg p-3">
+          <div class="flex items-center justify-between mb-2">
+            <span class="text-[11px] font-mono-crt text-emerald-400 font-bold">● 개설된 방 목록 (비밀번호 일치 시 입장/관전)</span>
+            <div class="flex items-center gap-2">
+              <span class="text-[10px] font-mono-crt text-neutral-400">2~4인 · 난입 관전</span>
+              <button onclick="refreshOnlineRooms()" class="px-2 py-0.5 bg-[#1b2028] hover:bg-[#252c37] border border-[#343d4b] rounded text-[10px] font-mono-crt text-amber-400">
+                🔄 새로고침
+              </button>
+            </div>
+          </div>
+          <div id="online-room-list" class="space-y-1.5 max-h-40 overflow-y-auto pr-1"></div>
+        </div>
+      </div>
+
+      <!-- Bottom Guide & Sound -->
+      <div class="mt-3.5 pt-3 border-t border-[#22272d] flex items-center gap-2">
+        <button onclick="openGuideModal()"
+          class="flex-1 py-2 bg-[#12161b] hover:bg-[#1a2027] border border-[#2c343e] hover:border-emerald-400 rounded-lg text-xs font-mono-crt text-emerald-400">
+          [ ? ] 게임 설명서 · 조작법 & 아이템 도감
+        </button>
+        <button onclick="toggleMute()" id="menu-mute-btn"
+          class="px-3 py-2 bg-[#12161b] border border-[#2c343e] rounded-lg text-xs font-mono-crt text-neutral-300">
+          🔊 ON
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       2. PASSWORD PROMPT & WAITING ROOM MODALS
+  ========================================================= -->
+  <div id="pw-prompt-modal" class="hidden fixed inset-0 z-50 bg-black/85 flex items-center justify-center p-4">
+    <div class="bg-[#101317] border-2 border-amber-500 rounded-xl p-5 max-w-xs w-full shadow-2xl">
+      <div class="font-mono-crt text-[10px] text-amber-400">SECURITY CHECK</div>
+      <h3 id="pw-modal-room-name" class="font-bold text-base text-white mb-1">비밀번호 입력</h3>
+      <p id="pw-modal-hint" class="text-xs text-neutral-400 mb-3">방장이 설정한 비밀번호를 입력하세요.</p>
+      <input id="join-room-pw-input" type="password" maxlength="12" placeholder="비밀번호..."
+        onkeydown="if(event.key==='Enter') submitJoinRoomPassword()"
+        class="w-full bg-[#07080a] border border-neutral-600 focus:border-amber-400 rounded px-3 py-2 text-sm text-white font-mono-crt mb-2 outline-none" />
+      <div id="pw-error-msg" class="hidden text-xs text-red-400 font-mono-crt mb-2">⚠️ 비밀번호가 틀렸습니다.</div>
+      <div class="flex gap-2 mt-2">
+        <button onclick="submitJoinRoomPassword()" class="flex-1 py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded text-xs font-mono-crt">입장</button>
+        <button onclick="closePwModal()" class="flex-1 py-2 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-xs font-mono-crt">취소</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="waiting-room-modal" class="hidden fixed inset-0 z-40 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-[#101318] border-2 border-[#343c46] rounded-xl p-5 max-w-md w-full shadow-2xl">
+      <div class="flex items-center justify-between border-b border-[#252b33] pb-2.5 mb-3">
+        <div>
+          <span class="text-[10px] font-mono-crt text-amber-400">WAITING LOBBY // 2~4 PLAYERS</span>
+          <h2 id="wait-room-title" class="font-bold text-lg text-white">방 제목</h2>
+        </div>
+        <div class="text-right font-mono-crt">
+          <div class="text-[10px] text-neutral-400">비밀번호</div>
+          <div id="wait-room-pw" class="text-xs text-emerald-400 font-bold">****</div>
+        </div>
+      </div>
+
+      <div id="wait-players-list" class="space-y-1.5 mb-3"></div>
+      <div id="wait-spectators-list" class="hidden mb-3 px-2.5 py-1.5 bg-[#090b0e] border border-purple-500/40 rounded text-[11px] font-mono-crt text-purple-300"></div>
+
+      <div id="host-start-area" class="hidden">
+        <button id="host-start-btn" onclick="hostStartOnlineGame()"
+          class="w-full py-2.5 bg-emerald-500 hover:bg-emerald-400 disabled:bg-neutral-700 disabled:text-neutral-500 text-black font-bold rounded-lg text-xs font-mono-crt transition-colors">
+          게임 시작 (2명 이상 입장 시 활성화)
+        </button>
+      </div>
+      <div id="guest-wait-msg" class="hidden text-center py-2 bg-[#090b0d] rounded border border-[#252a30] text-xs font-mono-crt text-amber-400 animate-pulse">
+        방장이 게임을 시작할 때까지 대기 중...
+      </div>
+
+      <button onclick="leaveOnlineRoom()" class="w-full mt-2.5 py-2 bg-neutral-900 hover:bg-red-950/70 border border-neutral-700 hover:border-red-500 text-neutral-300 hover:text-red-300 rounded text-xs font-mono-crt transition-colors">
+        🚪 방 나가기 (메인 메뉴로 돌아가기)
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       3. SLEEK, COMPACT IN-GAME 3D HUD (WIDE VIEWPORT)
+  ========================================================= -->
+  <div id="hud-layer" class="hidden fixed inset-0 z-20 pointer-events-none flex flex-col justify-between p-2 sm:p-3">
+
+    <!-- TOP EDGE BAR: Minimal & Compact -->
+    <div class="w-full flex items-center justify-between gap-2 pointer-events-auto">
+      <div class="flex items-center gap-1.5 shrink-0">
+        <div id="hud-round-badge" class="hud-glass px-2.5 py-1 font-mono-crt text-xs font-bold text-emerald-400">
+          ROUND 1/3
+        </div>
+        <div id="hud-dir-badge" class="hidden hud-glass px-2 py-1 font-mono-crt text-[11px] text-amber-400">
+          ↻
+        </div>
+        <div id="spectator-badge" class="hidden px-2.5 py-1 rounded bg-purple-900/90 border border-purple-400 font-mono-crt text-[11px] font-bold text-purple-200 animate-pulse">
+          👁️ 관전 중
+        </div>
+      </div>
+
+      <!-- Center Subtitle / Action Ticker -->
+      <div class="flex-1 max-w-lg hud-glass px-3 py-1 text-center truncate">
+        <span id="hud-ticker" class="font-mono-crt text-xs sm:text-sm text-neutral-100">
+          테이블 준비 완료.
+        </span>
+      </div>
+
+      <div class="flex items-center gap-1 shrink-0">
+        <button onclick="toggleMute()" id="hud-mute-btn" class="hud-glass px-2 py-1 text-xs font-mono-crt text-neutral-300 hover:text-white">🔊</button>
+        <button onclick="openGuideModal()" class="hud-glass px-2.5 py-1 text-xs font-mono-crt text-emerald-400 hover:border-emerald-400">? 가이드</button>
+        <button onclick="exitToMenu()" class="hud-glass px-2.5 py-1 text-xs font-mono-crt text-red-400 hover:border-red-500 font-bold">🚪 방 나가기</button>
+      </div>
+    </div>
+
+    <!-- UPPER-LEFT / TOP OPPONENTS COMPACT STRIP + ADRENALINE / JAMMER NEON PROMPT -->
+    <div class="w-full flex flex-col items-center mt-1">
+      <div id="opponents-hud-bar" class="w-full flex flex-wrap items-start justify-center gap-2 pointer-events-auto">
+        <!-- Compact Opponent Cards -->
+      </div>
+      <!-- Neon Slow-Blinking Steal Prompt (Visible only when Adrenaline stealingMode is active) -->
+      <div id="adrenaline-steal-prompt" class="hidden pointer-events-none flex justify-center mt-1.5">
+        <div class="neon-steal-prompt">
+          💉 상대 아이템을 선택하세요!
+        </div>
+      </div>
+      <!-- Neon Slow-Blinking Jammer Target Prompt (Visible in 3~4P when Jammer targeting is active) -->
+      <div id="jammer-target-prompt" class="hidden pointer-events-none flex justify-center mt-1.5">
+        <div class="neon-steal-prompt" style="border-color: rgba(129, 140, 248, 0.9); color: #e0e7ff;">
+          📡 턴을 차단할 상대를 선택하세요!
+        </div>
+      </div>
+    </div>
+
+    <!-- CENTER 3D VIEWPORT SPACE (Completely unobstructed for 3D Table, Dealer, Crate & Shotgun!) -->
+    <div class="flex-1 relative flex items-end justify-center pb-2">
+      <!-- Floating Target Selection Panel (Appears only when Shotgun is picked up) -->
+      <div id="shotgun-action-panel" class="hidden pointer-events-auto hud-glass border-red-500/80 px-4 py-2.5 text-center shadow-2xl">
+        <div class="font-mono-crt text-[11px] text-amber-400 mb-1.5">12게이지 산탄총 — 발사 대상 선택</div>
+        <div id="shotgun-targets-container" class="flex flex-wrap items-center justify-center gap-2"></div>
+        <button onclick="cancelShotgunAim()" class="mt-1.5 text-[11px] font-mono-crt text-neutral-400 hover:text-white underline">
+          총 내려놓기 (취소)
+        </button>
+      </div>
+    </div>
+
+    <!-- BOTTOM EDGE DOCK: Sleek Player HP + 8 Compact Slots + Shotgun Trigger -->
+    <div class="w-full max-w-3xl mx-auto pointer-events-auto">
+      <div class="hud-glass px-3 py-2 flex flex-wrap sm:flex-nowrap items-center justify-between gap-2.5">
+        <!-- Self HP & Shell Count -->
+        <div class="flex items-center sm:flex-col sm:items-start justify-between w-full sm:w-auto gap-2 shrink-0">
+          <div class="flex items-center gap-1.5">
+            <span id="hud-self-name" class="font-mono-crt font-bold text-xs text-emerald-400">PLAYER</span>
+            <span id="hud-turn-pill" class="px-1.5 py-0.5 rounded text-[10px] font-mono-crt bg-emerald-500/20 border border-emerald-500 text-emerald-300">
+              내 턴
+            </span>
+          </div>
+          <div class="flex items-center gap-2">
+            <div id="hud-self-hp" class="flex items-center gap-0.5"></div>
+            <span class="text-[11px] font-mono-crt text-neutral-400">| 잔탄 <strong id="hud-shell-count" class="text-white">?</strong></span>
+          </div>
+        </div>
+
+        <!-- 8 Compact Item Slots -->
+        <div id="hud-self-items" class="flex items-center justify-center gap-1 overflow-x-auto py-0.5"></div>
+
+        <!-- Pick up Shotgun Button -->
+        <button id="pickup-shotgun-btn" onclick="onPickupShotgunClick()"
+          class="w-full sm:w-auto shrink-0 px-3.5 py-2 bg-red-600 hover:bg-red-500 text-white font-bold rounded text-xs font-mono-crt shadow-lg transition-transform hover:scale-105">
+          🔫 샷건 들기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       4. FLOATING ITEM [ 선택 / 취소 ] POPOVER (BELOW CLICKED ITEM, CLAMPED IN VIEWPORT)
+  ========================================================= -->
+  <div id="item-popover" class="hidden fixed z-40 w-56 bg-[#0c0f12]/95 border border-emerald-400 rounded-lg p-2.5 shadow-[0_8px_28px_rgba(0,0,0,0.95)] pointer-events-auto">
+    <div class="flex items-center justify-between mb-1">
+      <span id="pop-name" class="font-bold text-xs text-emerald-400">아이템</span>
+      <span id="pop-tag" class="text-[9px] font-mono-crt px-1.5 py-0.2 rounded bg-neutral-800 text-amber-400">공용</span>
+    </div>
+    <p id="pop-desc" class="text-[11px] text-neutral-300 leading-snug mb-2">설명</p>
+    <div class="flex gap-1.5">
+      <button onclick="confirmSelectedItem()" class="flex-1 py-1 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded text-[11px] font-mono-crt">
+        선택
+      </button>
+      <button onclick="cancelSelectedItem()" class="flex-1 py-1 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded text-[11px] font-mono-crt border border-neutral-600">
+        취소
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       5. PRIVATE INTEL MODAL (MAGNIFYING GLASS / PHONE)
+  ========================================================= -->
+  <div id="intel-modal" class="hidden fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+    <div class="bg-[#0d1114] border-2 border-amber-500 rounded-xl p-5 max-w-xs w-full text-center shadow-2xl">
+      <div id="intel-icon" class="text-3xl mb-1.5">🔍</div>
+      <h3 id="intel-title" class="font-mono-crt font-bold text-base text-amber-400 mb-2">약실 확인</h3>
+      <div id="intel-body" class="my-3 p-3 rounded-lg bg-black/75 border border-neutral-700 font-mono-crt text-sm font-bold"></div>
+      <button onclick="closeIntelModal()" class="w-full py-2 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded font-mono-crt text-xs">
+        확인
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       6. GAME OVER MODAL
+  ========================================================= -->
+  <div id="gameover-modal" class="hidden fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
+    <div class="max-w-sm w-full bg-[#111317] border-2 border-red-600 rounded-xl p-6 text-center shadow-2xl">
+      <div class="font-mono-crt text-[10px] text-red-400 tracking-widest mb-1">MATCH TERMINATED</div>
+      <h2 id="gameover-title" class="font-title text-3xl text-white mb-2">승리!</h2>
+      <p id="gameover-desc" class="text-xs text-neutral-300 mb-5 font-mono-crt leading-relaxed"></p>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <button id="gameover-restart-btn" onclick="restartCurrentGame()" class="flex-1 py-2.5 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-xs">
+          다시 플레이
+        </button>
+        <button id="gameover-lobby-return-btn" onclick="returnOnlineRoomToLobby()" class="hidden flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg text-xs">
+          대기실로 (재대결)
+        </button>
+        <button onclick="exitToMenu()" class="flex-1 py-2.5 bg-[#1e2229] hover:bg-[#2a303a] text-neutral-200 font-bold rounded-lg text-xs border border-neutral-600">
+          🚪 메인 로비로 나가기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       7. CLEAN, VIEWPORT-CONTAINED 4-TAB GUIDE MODAL
+  ========================================================= -->
+  <div id="guide-modal" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm flex items-center justify-center p-3">
+    <div class="bg-[#101317] border-2 border-[#343b44] rounded-xl max-w-2xl w-full max-h-[85vh] flex flex-col shadow-2xl overflow-hidden">
+      <!-- Header -->
+      <div class="flex items-center justify-between px-4 py-3 border-b border-[#242930] shrink-0">
+        <div class="flex items-center gap-2">
+          <span class="text-emerald-400 font-mono-crt font-bold text-xs">[ MANUAL ]</span>
+          <h2 class="font-bold text-base text-white">벅샷 룰렛 3D 가이드</h2>
+        </div>
+        <button onclick="closeGuideModal()" class="text-neutral-400 hover:text-white font-mono-crt text-base px-2">✕</button>
+      </div>
+
+      <!-- 4 Organized Tabs -->
+      <div class="grid grid-cols-4 border-b border-[#242930] bg-[#0a0c0f] font-mono-crt text-[11px] sm:text-xs shrink-0">
+        <button onclick="switchGuideTab('rules')" id="gtab-rules" class="py-2.5 border-b-2 border-emerald-400 text-emerald-400 font-bold">1. 기본 규칙</button>
+        <button onclick="switchGuideTab('controls')" id="gtab-controls" class="py-2.5 border-b-2 border-transparent text-neutral-400 hover:text-white">2. 조작법</button>
+        <button onclick="switchGuideTab('items')" id="gtab-items" class="py-2.5 border-b-2 border-transparent text-neutral-400 hover:text-white">3. 아이템 도감</button>
+        <button onclick="switchGuideTab('modes')" id="gtab-modes" class="py-2.5 border-b-2 border-transparent text-neutral-400 hover:text-white">4. 모드 안내</button>
+      </div>
+
+      <!-- Scrollable Body -->
+      <div class="p-4 overflow-y-auto space-y-3 text-xs sm:text-sm text-neutral-300 leading-relaxed flex-1">
+        <!-- TAB 1: BASIC RULES -->
+        <div id="gcontent-rules" class="space-y-2.5">
+          <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-3">
+            <h3 class="font-bold text-amber-400 mb-1">🔫 12게이지 산탄총 & 탄환 규칙</h3>
+            <p class="text-xs text-neutral-300 space-y-1">
+              • 매 장전마다 CRT 모니터에 <span class="text-red-400 font-bold">실탄(LIVE)</span>과 <span class="text-blue-400 font-bold">공포탄(BLANK)</span> 개수가 표시된 뒤 무작위 순서로 장전됩니다.<br>
+              • <strong>상대에게 발사:</strong> 실탄이면 상대 체력 -1(쇠톱 시 -2), 공포탄이면 피해 없음. 발사 후 상대에게 턴이 넘어갑니다.<br>
+              • <strong>자신에게 발사:</strong> 실탄이면 본인 체력 감소 후 턴 종료. <span class="text-emerald-400 font-bold">공포탄이면 피해 없이 보너스 턴을 얻어 한 번 더 행동합니다!</span>
+            </p>
+          </div>
+          <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-3">
+            <h3 class="font-bold text-red-400 mb-1">⚡ 체력(전하) 및 서든데스</h3>
+            <p class="text-xs text-neutral-300">
+              • 체력이 0이 되면 해당 라운드/매치에서 패배합니다.<br>
+              • 1인용 3라운드에서는 체력이 2칸 이하로 떨어지면 <strong>제세동기 전선이 절단</strong>되어 이후 담배나 약으로 회복할 수 없습니다.
+            </p>
+          </div>
+        </div>
+
+        <!-- TAB 2: CONTROLS -->
+        <div id="gcontent-controls" class="hidden space-y-2.5">
+          <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-3 space-y-2">
+            <h3 class="font-bold text-emerald-400">🖱️ 화면 조작 및 행동 순서</h3>
+            <ul class="list-disc list-inside text-xs text-neutral-300 space-y-1.5">
+              <li><strong>자동 아이템 보급:</strong> 라운드/장전 시작 시 보급 상자가 자동으로 열리며 랜덤 아이템이 각 플레이어 칸에 순차 배치됩니다.</li>
+              <li><strong>아이템 사용:</strong> 하단 슬롯의 아이템을 클릭하면 작은 팝업이 뜨며, <strong>[ 선택 ]</strong>을 누르면 즉시 사용되고 <strong>[ 취소 ]</strong>를 누르면 닫힙니다.</li>
+              <li><strong>샷건 발사:</strong> 테이블 중앙의 3D 산탄총을 직접 클릭하거나 하단 <strong>[ 🔫 샷건 들기 ]</strong> 버튼을 누른 뒤 대상을 선택해 발사합니다.</li>
+              <li><strong>3D 시점 회전:</strong> 마우스를 움직이면 1인칭 시선이 테이블 주위로 자연스럽게 움직입니다.</li>
+            </ul>
+          </div>
+        </div>
+
+        <!-- TAB 3: ITEM ENCYCLOPEDIA -->
+        <div id="gcontent-items" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-2"></div>
+
+        <!-- TAB 4: MODES -->
+        <div id="gcontent-modes" class="hidden space-y-2.5">
+          <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-3">
+            <h3 class="font-bold text-red-400 mb-1">🤖 1인용 모드 (vs AI 딜러)</h3>
+            <p class="text-xs text-neutral-300">
+              • 1라운드(체력 2, 아이템 없음) → 2라운드(체력 4, 상자 아이템 2개) → 3라운드 서든데스(체력 5, 상자 아이템 4개) 순으로 진행됩니다.<br>
+              • 딜러는 남은 탄환 확률과 돋보기·대포폰 정보를 계산하여 아이템과 사격 대상을 결정합니다.
+            </p>
+          </div>
+          <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-3">
+            <h3 class="font-bold text-amber-400 mb-1">🌐 실시간 온라인 비밀번호 방 & 관전</h3>
+            <p class="text-xs text-neutral-300">
+              • 방장이 방 제목과 <strong>비밀번호</strong>를 설정해 방을 만들면 HTML을 공유받은 다른 기기/네트워크 친구 화면에도 실시간으로 방이 표시됩니다.<br>
+              • <strong>2명 이상</strong> 모이면 방장이 게임을 시작할 수 있으며, 진행 중인 방에 비밀번호를 치고 들어가면 <strong>관전 모드</strong>로 실시간 관전합니다.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="px-4 py-2.5 border-t border-[#242930] text-right shrink-0 bg-[#0a0c0f]">
+        <button onclick="closeGuideModal()" class="px-4 py-1.5 bg-emerald-500 hover:bg-emerald-400 text-black font-bold rounded text-xs font-mono-crt">
+          닫기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =========================================================
+       MODULE SCRIPT: THREE.JS 3D ENGINE + RELIABLE AI + CROSS-DEVICE MQTT ONLINE
+  ========================================================= -->
+  <script type="module">
+    /* -----------------------------------------------------------
+       1. CSP-SAFE MULTIPLAYER ENGINE (HTTPS RELAY + LOCAL SYNC, NO WEBSOCKETS)
+    ----------------------------------------------------------- */
+    const RELAY_BASE = 'https://ntfy.sh';
+    const LOBBY_TOPIC = 'buckshot3d-global-v4-lobby';
+    const ROOM_TTL_MS = 90000;
+
+    // Prevent any sandboxed network error from surfacing as an unhandled rejection
+    window.addEventListener('unhandledrejection', (ev) => {
+      if (ev.reason && (ev.reason.name === 'SecurityError' || String(ev.reason).includes('WebSocket') || String(ev.reason).includes('Failed to fetch'))) {
+        ev.preventDefault();
+      }
+    });
+
+    let currentUserId = sessionStorage.getItem('bs3d_uid');
+    if (!currentUserId) {
+      currentUserId = 'u_' + Math.random().toString(36).slice(2, 8) + '_' + Date.now().toString(36).slice(-4);
+      sessionStorage.setItem('bs3d_uid', currentUserId);
+    }
+
+    let relayAvailable = false;
+    let lobbyPollTimer = null;
+    let roomPollTimer = null;
+    let hostHeartbeatTimer = null;
+    let currentRoomId = null;
+    let hostedRoomState = null;
+    let pendingJoinRoom = null;
+    const roomsMap = new Map();
+    const seenPacketIds = new Set();
+    let cachedRooms = [];
+
+    const localChannel = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('buckshot_rooms_v4') : null;
+    const STORAGE_ROOMS_KEY = 'buckshot3d_rooms_store_v4';
+
+    function loadRoomsFromLocalStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_ROOMS_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        const now = Date.now();
+        Object.values(parsed || {}).forEach((room) => {
+          if (room && room.id && now - (room.updatedAt || 0) <= ROOM_TTL_MS) {
+            roomsMap.set(room.id, room);
+          }
+        });
+      } catch (e) {}
+    }
+
+    function saveRoomToLocalStorage(roomObj) {
+      try {
+        const raw = localStorage.getItem(STORAGE_ROOMS_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        parsed[roomObj.id] = roomObj;
+        localStorage.setItem(STORAGE_ROOMS_KEY, JSON.stringify(parsed));
+      } catch (e) {}
+    }
+
+    function deleteRoomFromLocalStorage(roomId) {
+      try {
+        const raw = localStorage.getItem(STORAGE_ROOMS_KEY);
+        if (!raw) return;
+        const parsed = JSON.parse(raw);
+        delete parsed[roomId];
+        localStorage.setItem(STORAGE_ROOMS_KEY, JSON.stringify(parsed));
+      } catch (e) {}
+    }
+
+    async function publishRelayPacket(topic, packet) {
+      if (!relayAvailable) return false;
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`${RELAY_BASE}/${topic}`, {
+          method: 'POST',
+          body: JSON.stringify({ ...packet, pktId: packet.pktId || `${currentUserId}_${Date.now()}_${Math.random().toString(36).slice(2, 6)}` }),
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        return res.ok;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function pollRelayTopic(topic, sinceWindow = '35s') {
+      if (!relayAvailable) return;
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 3500);
+        const res = await fetch(`${RELAY_BASE}/${topic}/json?poll=1&since=${sinceWindow}`, {
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        if (!res.ok) return;
+
+        const text = await res.text();
+        if (!text) return;
+        const lines = text.trim().split('\n');
+        for (const line of lines) {
+          if (!line) continue;
+          let wrapper;
+          try { wrapper = JSON.parse(line); } catch (e) { continue; }
+          if (!wrapper || wrapper.event !== 'message' || !wrapper.message) continue;
+
+          let packet;
+          try { packet = JSON.parse(wrapper.message); } catch (e) { continue; }
+          if (!packet || !packet.kind) continue;
+
+          const dedupKey = packet.pktId || wrapper.id;
+          if (dedupKey) {
+            if (seenPacketIds.has(dedupKey)) continue;
+            seenPacketIds.add(dedupKey);
+            if (seenPacketIds.size > 400) {
+              const first = seenPacketIds.values().next().value;
+              seenPacketIds.delete(first);
+            }
+          }
+
+          handleIncomingPacket(packet);
+        }
+      } catch (e) {}
+    }
+
+    function handleIncomingPacket(packet) {
+      if (packet.kind === 'ROOM_STATE' && packet.room && packet.room.id) {
+        if (Date.now() - (packet.room.updatedAt || 0) <= ROOM_TTL_MS) {
+          // Ignore older state revisions if we are hosting this room
+          if (hostedRoomState && hostedRoomState.id === packet.room.id && hostedRoomState.hostId === currentUserId) {
+            return;
+          }
+          upsertDiscoveredRoom(packet.room);
+        }
+      } else if (packet.kind === 'ROOM_DELETE' && packet.roomId) {
+        removeDiscoveredRoom(packet.roomId);
+      } else if (packet.kind === 'ROOM_ACTION' && packet.roomId && packet.action) {
+        if (hostedRoomState && hostedRoomState.id === packet.roomId && hostedRoomState.hostId === currentUserId) {
+          processHostAction(packet.action);
+        }
+      } else if (packet.kind === 'PRIVATE_INTEL' && packet.roomId === currentRoomId && packet.targetUid === currentUserId) {
+        showIntelModal(packet.icon || '🔍', packet.title || '정보 확인', packet.bodyHtml);
+      }
+    }
+
+    async function initOnlineBackend() {
+      const badge = document.getElementById('online-status-badge');
+      badge.textContent = 'ONLINE: CHECKING...';
+      badge.className = 'text-amber-400';
+
+      loadRoomsFromLocalStorage();
+      cachedRooms = Array.from(roomsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      renderRoomsList();
+
+      if (localChannel) {
+        localChannel.onmessage = (ev) => {
+          if (ev.data) handleIncomingPacket(ev.data);
+        };
+      }
+
+      window.addEventListener('storage', (ev) => {
+        if (ev.key === STORAGE_ROOMS_KEY && ev.newValue) {
+          try {
+            const parsed = JSON.parse(ev.newValue);
+            const now = Date.now();
+            const activeIds = new Set();
+            Object.values(parsed || {}).forEach((r) => {
+              if (r && r.id && now - (r.updatedAt || 0) <= ROOM_TTL_MS) {
+                activeIds.add(r.id);
+                if (!hostedRoomState || hostedRoomState.id !== r.id) {
+                  upsertDiscoveredRoom(r);
+                }
+              }
+            });
+            for (const existingId of Array.from(roomsMap.keys())) {
+              if (!activeIds.has(existingId)) removeDiscoveredRoom(existingId);
+            }
+          } catch (e) {}
+        }
+      });
+
+      window.addEventListener('beforeunload', () => {
+        if (hostedRoomState && hostedRoomState.id && hostedRoomState.hostId === currentUserId) {
+          deleteRoomFromLocalStorage(hostedRoomState.id);
+          if (localChannel) {
+            try { localChannel.postMessage({ kind: 'ROOM_DELETE', roomId: hostedRoomState.id }); } catch (e) {}
+          }
+        }
+      });
+
+      // Prune expired rooms periodically
+      setInterval(() => {
+        const now = Date.now();
+        let changed = false;
+        for (const [id, r] of roomsMap.entries()) {
+          if (now - (r.updatedAt || 0) > ROOM_TTL_MS) {
+            roomsMap.delete(id);
+            deleteRoomFromLocalStorage(id);
+            changed = true;
+          }
+        }
+        if (changed) {
+          cachedRooms = Array.from(roomsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+          renderRoomsList();
+        }
+      }, 10000);
+
+      // Probe HTTPS relay without using WebSockets (safe inside Canvas sandbox)
+      try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 3000);
+        const probe = await fetch(`${RELAY_BASE}/${LOBBY_TOPIC}/json?poll=1&since=5s`, {
+          signal: controller.signal
+        });
+        clearTimeout(tid);
+        relayAvailable = probe.ok;
+      } catch (e) {
+        relayAvailable = false;
+      }
+
+      if (relayAvailable) {
+        badge.textContent = 'ONLINE: GLOBAL SYNC ●';
+        badge.className = 'text-emerald-400 font-bold';
+        await pollRelayTopic(LOBBY_TOPIC, '60s');
+        lobbyPollTimer = setInterval(() => {
+          if (!currentRoomId) pollRelayTopic(LOBBY_TOPIC, '30s');
+        }, 2500);
+      } else {
+        badge.textContent = 'ONLINE: LOCAL TAB SYNC ●';
+        badge.className = 'text-emerald-400 font-bold';
+      }
+    }
+
+    function startRoomPolling(roomId) {
+      stopRoomPolling();
+      if (!relayAvailable || !roomId) return;
+      const roomTopic = `buckshot3d-global-v4-room-${roomId}`;
+      pollRelayTopic(roomTopic, '30s');
+      roomPollTimer = setInterval(() => {
+        if (currentRoomId === roomId) {
+          pollRelayTopic(roomTopic, '15s');
+        }
+      }, 1200);
+    }
+
+    function stopRoomPolling() {
+      if (roomPollTimer) {
+        clearInterval(roomPollTimer);
+        roomPollTimer = null;
+      }
+    }
+
+    window.refreshOnlineRooms = async function () {
+      sfx.playClick(600);
+      loadRoomsFromLocalStorage();
+      cachedRooms = Array.from(roomsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      renderRoomsList();
+      if (relayAvailable) {
+        await pollRelayTopic(LOBBY_TOPIC, '60s');
+      }
+    };
+
+    function upsertDiscoveredRoom(room) {
+      roomsMap.set(room.id, room);
+      saveRoomToLocalStorage(room);
+      cachedRooms = Array.from(roomsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      renderRoomsList();
+
+      if (currentRoomId === room.id) {
+        if (room.hostId === currentUserId) {
+          hostedRoomState = room;
+          ensureHostSession(room);
+        }
+        handleOnlineRoomSync(room);
+      }
+    }
+
+    function removeDiscoveredRoom(roomId) {
+      roomsMap.delete(roomId);
+      deleteRoomFromLocalStorage(roomId);
+      cachedRooms = Array.from(roomsMap.values()).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+      renderRoomsList();
+
+      if (currentRoomId === roomId) {
+        cleanupHostSession(false);
+        stopRoomPolling();
+        currentRoomId = null;
+        state.stealingMode = false;
+        state.jammerTargetingMode = false;
+        document.getElementById('waiting-room-modal').classList.add('hidden');
+        document.getElementById('hud-layer').classList.add('hidden');
+        document.getElementById('gameover-modal').classList.add('hidden');
+        document.getElementById('menu-screen').classList.remove('hidden');
+        showTicker('방이 종료되어 메인 로비로 이동했습니다.');
+      }
+    }
+
+    function renderRoomsList() {
+      const container = document.getElementById('online-room-list');
+      if (!cachedRooms.length) {
+        container.innerHTML = `<div class="text-xs text-neutral-500 font-mono-crt text-center py-4">현재 개설된 방이 없습니다. 새 방을 만들어보세요!</div>`;
+        return;
+      }
+      container.innerHTML = cachedRooms.map(room => {
+        const count = (room.players || []).length;
+        const specCount = (room.spectators || []).length;
+        const isPlaying = room.status === 'playing' || room.status === 'finished';
+        return `
+          <div class="bg-[#080a0c] border border-[#252b33] hover:border-amber-500/80 rounded-lg px-3 py-2 flex items-center justify-between gap-2">
+            <div class="min-w-0">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="text-amber-400 text-xs">🔒</span>
+                <span class="font-bold text-xs sm:text-sm text-white truncate">${escapeHtml(room.title || '방')}</span>
+                <span class="px-1.5 py-0.2 rounded text-[10px] font-mono-crt ${isPlaying ? 'bg-purple-900/80 text-purple-200 border border-purple-500' : 'bg-emerald-900/70 text-emerald-300 border border-emerald-500'}">
+                  ${isPlaying ? `진행 중 (관전 ${specCount}명)` : `대기 (${count}/4)`}
+                </span>
+              </div>
+              <div class="text-[10px] font-mono-crt text-neutral-400">방장: ${escapeHtml(room.hostName || 'HOST')}</div>
+            </div>
+            <button onclick="promptJoinRoom('${room.id}')" class="shrink-0 px-3 py-1 bg-amber-500 hover:bg-amber-400 text-black font-bold rounded text-xs font-mono-crt">
+              ${isPlaying ? '관전' : '입장'}
+            </button>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function ensureHostSession(roomObj) {
+      hostedRoomState = roomObj;
+      startRoomPolling(roomObj.id);
+
+      if (hostHeartbeatTimer) clearInterval(hostHeartbeatTimer);
+      hostHeartbeatTimer = setInterval(() => {
+        if (hostedRoomState && hostedRoomState.hostId === currentUserId) {
+          hostedRoomState.updatedAt = Date.now();
+          broadcastHostedRoom(hostedRoomState);
+        }
+      }, 12000);
+    }
+
+    function cleanupHostSession(clearRetainedRoom = false) {
+      if (hostHeartbeatTimer) {
+        clearInterval(hostHeartbeatTimer);
+        hostHeartbeatTimer = null;
+      }
+      const prevRoomId = hostedRoomState?.id;
+      if (clearRetainedRoom && prevRoomId) {
+        const delPacket = { kind: 'ROOM_DELETE', roomId: prevRoomId };
+        publishRelayPacket(LOBBY_TOPIC, delPacket);
+        publishRelayPacket(`buckshot3d-global-v4-room-${prevRoomId}`, delPacket);
+        if (localChannel) localChannel.postMessage(delPacket);
+        deleteRoomFromLocalStorage(prevRoomId);
+        roomsMap.delete(prevRoomId);
+        cachedRooms = Array.from(roomsMap.values());
+        renderRoomsList();
+      }
+      hostedRoomState = null;
+    }
+
+    function broadcastHostedRoom(roomObj) {
+      roomObj.updatedAt = Date.now();
+      hostedRoomState = roomObj;
+      const packet = { kind: 'ROOM_STATE', room: roomObj };
+
+      publishRelayPacket(LOBBY_TOPIC, packet);
+      publishRelayPacket(`buckshot3d-global-v4-room-${roomObj.id}`, packet);
+      if (localChannel) localChannel.postMessage(packet);
+      upsertDiscoveredRoom(roomObj);
+    }
+
+    function sendPrivateIntelToPlayer(roomId, targetUid, icon, title, bodyHtml) {
+      if (targetUid === currentUserId) {
+        showIntelModal(icon, title, bodyHtml);
+        return;
+      }
+      const packet = { kind: 'PRIVATE_INTEL', roomId, targetUid, icon, title, bodyHtml };
+      publishRelayPacket(`buckshot3d-global-v4-room-${roomId}`, packet);
+      if (localChannel) localChannel.postMessage(packet);
+    }
+
+    function dispatchRoomAction(roomId, action) {
+      if (hostedRoomState && hostedRoomState.id === roomId && hostedRoomState.hostId === currentUserId) {
+        processHostAction(action);
+        return;
+      }
+      const packet = { kind: 'ROOM_ACTION', roomId, action };
+      publishRelayPacket(`buckshot3d-global-v4-room-${roomId}`, packet);
+      if (localChannel) localChannel.postMessage(packet);
+    }
+
+    window.createOnlineRoom = function () {
+      sfx.init();
+      sfx.playClick(600);
+      const nickname = (document.getElementById('nickname-input').value || 'PLAYER').trim().toUpperCase();
+      const title = (document.getElementById('create-room-title').value || `${nickname}의 방`).trim();
+      const password = document.getElementById('create-room-pw').value.trim();
+
+      if (!password) {
+        const pwInput = document.getElementById('create-room-pw');
+        pwInput.focus();
+        pwInput.placeholder = '비밀번호를 입력하세요!';
+        return;
+      }
+
+      const roomId = 'room_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      const roomObj = {
+        id: roomId,
+        title,
+        password,
+        hostId: currentUserId,
+        hostName: nickname,
+        status: 'waiting',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        players: [{ uid: currentUserId, name: nickname, hp: 4, maxHp: 4, items: [], skipped: false, dead: false, suddenDeath: false }],
+        spectators: [],
+        gameState: null
+      };
+
+      currentRoomId = roomId;
+      ensureHostSession(roomObj);
+      broadcastHostedRoom(roomObj);
+    };
+
+    window.promptJoinRoom = function (roomId) {
+      sfx.playClick(550);
+      const room = roomsMap.get(roomId) || cachedRooms.find(r => r.id === roomId);
+      if (!room) return;
+      pendingJoinRoom = room;
+      const isPlaying = room.status === 'playing' || room.status === 'finished';
+      document.getElementById('pw-modal-room-name').textContent = `[ ${room.title} ]`;
+      document.getElementById('pw-modal-hint').textContent = isPlaying
+        ? '게임이 진행 중입니다. 비밀번호 입력 시 관전자로 입장합니다.'
+        : '방장이 설정한 비밀번호를 입력하세요.';
+      document.getElementById('join-room-pw-input').value = '';
+      document.getElementById('pw-error-msg').classList.add('hidden');
+      document.getElementById('pw-prompt-modal').classList.remove('hidden');
+      setTimeout(() => document.getElementById('join-room-pw-input').focus(), 50);
+    };
+
+    window.closePwModal = function () {
+      document.getElementById('pw-prompt-modal').classList.add('hidden');
+      pendingJoinRoom = null;
+    };
+
+    window.submitJoinRoomPassword = function () {
+      if (!pendingJoinRoom) return;
+      const pw = document.getElementById('join-room-pw-input').value.trim();
+      if (pw !== pendingJoinRoom.password) {
+        sfx.playItemUse(false);
+        document.getElementById('pw-error-msg').classList.remove('hidden');
+        return;
+      }
+
+      sfx.playItemUse(true);
+      const targetRoom = pendingJoinRoom;
+      const roomId = targetRoom.id;
+      closePwModal();
+
+      const nickname = (document.getElementById('nickname-input').value || 'GUEST').trim().toUpperCase();
+      currentRoomId = roomId;
+      startRoomPolling(roomId);
+
+      const optimisticRoom = JSON.parse(JSON.stringify(targetRoom));
+      const alreadyIn = (optimisticRoom.players || []).some(p => p.uid === currentUserId) ||
+                        (optimisticRoom.spectators || []).some(s => s.uid === currentUserId);
+      if (!alreadyIn) {
+        if (optimisticRoom.status === 'waiting' && (optimisticRoom.players || []).length < 4) {
+          optimisticRoom.players.push({ uid: currentUserId, name: nickname, hp: 4, maxHp: 4, items: [], skipped: false, dead: false, suddenDeath: false });
+        } else {
+          optimisticRoom.spectators = [...(optimisticRoom.spectators || []), { uid: currentUserId, name: nickname }];
+        }
+      }
+      handleOnlineRoomSync(optimisticRoom);
+
+      dispatchRoomAction(roomId, {
+        type: 'JOIN',
+        uid: currentUserId,
+        name: nickname,
+        password: pw,
+        ts: Date.now()
+      });
+    };
+
+    function handleOnlineRoomSync(room) {
+      const isHost = room.hostId === currentUserId;
+      const isSpectator = !(room.players || []).some(p => p.uid === currentUserId);
+
+      if (room.status === 'waiting') {
+        document.getElementById('menu-screen').classList.add('hidden');
+        document.getElementById('hud-layer').classList.add('hidden');
+        document.getElementById('gameover-modal').classList.add('hidden');
+        document.getElementById('waiting-room-modal').classList.remove('hidden');
+
+        document.getElementById('wait-room-title').textContent = room.title;
+        document.getElementById('wait-room-pw').textContent = room.password;
+
+        const players = room.players || [];
+        let slotsHtml = '';
+        for (let i = 0; i < 4; i++) {
+          const p = players[i];
+          if (p) {
+            slotsHtml += `
+              <div class="bg-[#080a0c] border ${p.uid === currentUserId ? 'border-emerald-500/70' : 'border-[#242a32]'} rounded-lg px-3 py-2 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <span class="font-mono-crt text-xs text-amber-400">P${i + 1}</span>
+                  <span class="font-bold text-xs sm:text-sm text-white">${escapeHtml(p.name)}</span>
+                  ${p.uid === room.hostId ? '<span class="px-1.5 py-0.2 text-[10px] font-mono-crt bg-amber-500/20 border border-amber-500 text-amber-300 rounded">방장</span>' : ''}
+                  ${p.uid === currentUserId ? '<span class="px-1.5 py-0.2 text-[10px] font-mono-crt bg-emerald-500/20 border border-emerald-500 text-emerald-300 rounded">나</span>' : ''}
+                </div>
+                <span class="text-[11px] font-mono-crt text-emerald-400">READY</span>
+              </div>
+            `;
+          } else {
+            slotsHtml += `
+              <div class="bg-[#060709] border border-dashed border-[#1e232a] rounded-lg px-3 py-1.5 flex items-center justify-between opacity-60">
+                <span class="font-mono-crt text-xs text-neutral-500">P${i + 1} · 빈 슬롯 (대기 중)</span>
+                <span class="text-[10px] font-mono-crt text-neutral-600">OPEN</span>
+              </div>
+            `;
+          }
+        }
+        document.getElementById('wait-players-list').innerHTML = slotsHtml;
+
+        const specs = room.spectators || [];
+        const specEl = document.getElementById('wait-spectators-list');
+        if (specs.length > 0) {
+          specEl.classList.remove('hidden');
+          specEl.textContent = `👁️ 관전자 (${specs.length}명): ${specs.map(s => s.name).join(', ')}`;
+        } else {
+          specEl.classList.add('hidden');
+        }
+
+        if (isHost) {
+          document.getElementById('host-start-area').classList.remove('hidden');
+          document.getElementById('guest-wait-msg').classList.add('hidden');
+          const btn = document.getElementById('host-start-btn');
+          const cnt = players.length;
+          btn.disabled = cnt < 2;
+          btn.textContent = cnt >= 2 ? `게임 시작 (${cnt}명 참가 중) ▶` : `게임 시작 (2명 이상 입장 시 활성화 · 현재 ${cnt}/4명)`;
+        } else {
+          document.getElementById('host-start-area').classList.add('hidden');
+          document.getElementById('guest-wait-msg').classList.remove('hidden');
+        }
+      } else if (room.status === 'playing' || room.status === 'finished') {
+        document.getElementById('menu-screen').classList.add('hidden');
+        document.getElementById('waiting-room-modal').classList.add('hidden');
+        document.getElementById('hud-layer').classList.remove('hidden');
+        if (room.gameState) applyOnlineState(room, isSpectator);
+      }
+    }
+
+    window.hostStartOnlineGame = function () {
+      if (!currentRoomId || !hostedRoomState || hostedRoomState.hostId !== currentUserId) return;
+      if ((hostedRoomState.players || []).length < 2) return;
+
+      sfx.init();
+      sfx.playPump();
+
+      const players = hostedRoomState.players.map((p, idx) => {
+        const items = [];
+        for (let i = 0; i < 3; i++) items.push(MP_POOL[Math.floor(Math.random() * MP_POOL.length)]);
+        return {
+          id: idx, uid: p.uid, name: p.name, isAI: false,
+          hp: 4, maxHp: 4, items, skipped: false, dead: false, suddenDeath: false
+        };
+      });
+
+      const { shells, liveCount, blankCount } = generateShells(4, 7);
+
+      hostedRoomState.status = 'playing';
+      hostedRoomState.gameState = {
+        mode: 'online',
+        round: 1,
+        players,
+        currentTurnIdx: 0,
+        turnDirection: 1,
+        shells,
+        loadSeq: { id: Date.now(), liveCount, blankCount, itemCount: 3 },
+        sawedOff: false,
+        syncRev: 1,
+        ticker: `게임 시작! 실탄 ${liveCount}발 / 공포탄 ${blankCount}발 장전 & 보급 상자 지급!`,
+        lastEvent: null,
+        lastHeal: null,
+        winnerName: null
+      };
+
+      broadcastHostedRoom(hostedRoomState);
+    };
+
+    window.returnOnlineRoomToLobby = function () {
+      if (!currentRoomId || !hostedRoomState || hostedRoomState.hostId !== currentUserId) return;
+      sfx.playClick(580);
+      document.getElementById('gameover-modal').classList.add('hidden');
+
+      const nextPlayers = (hostedRoomState.players || []).map(p => ({
+        ...p, hp: 4, maxHp: 4, items: [], skipped: false, dead: false, suddenDeath: false
+      }));
+      const remainingSpecs = [];
+      for (const sp of (hostedRoomState.spectators || [])) {
+        if (nextPlayers.length < 4) {
+          nextPlayers.push({ uid: sp.uid, name: sp.name, hp: 4, maxHp: 4, items: [], skipped: false, dead: false, suddenDeath: false });
+        } else {
+          remainingSpecs.push(sp);
+        }
+      }
+
+      hostedRoomState.status = 'waiting';
+      hostedRoomState.players = nextPlayers;
+      hostedRoomState.spectators = remainingSpecs;
+      hostedRoomState.gameState = null;
+      broadcastHostedRoom(hostedRoomState);
+    };
+
+    window.leaveOnlineRoom = function () {
+      sfx.playClick(460);
+      const roomId = currentRoomId;
+      if (roomId) {
+        if (hostedRoomState && hostedRoomState.id === roomId && hostedRoomState.hostId === currentUserId) {
+          const remainingPlayers = (hostedRoomState.players || []).filter(p => p.uid !== currentUserId);
+          if (hostedRoomState.status === 'playing' && remainingPlayers.length >= 2) {
+            const newHost = remainingPlayers.find(p => !p.dead) || remainingPlayers[0];
+            hostedRoomState.hostId = newHost.uid;
+            hostedRoomState.hostName = newHost.name;
+            hostedRoomState.players = hostedRoomState.players.filter(p => p.uid !== currentUserId);
+            if (hostedRoomState.gameState) {
+              const gsPlayers = hostedRoomState.gameState.players;
+              const leaverIdx = gsPlayers.findIndex(p => p.uid === currentUserId);
+              if (leaverIdx !== -1) {
+                gsPlayers[leaverIdx].hp = 0;
+                gsPlayers[leaverIdx].dead = true;
+              }
+              hostedRoomState.gameState.ticker = `🚪 방장이 퇴장하여 ${newHost.name}님이 새 방장이 되었습니다.`;
+              if (gsPlayers[hostedRoomState.gameState.currentTurnIdx]?.uid === currentUserId) {
+                advanceOnlineGameTurn(hostedRoomState.gameState, false, hostedRoomState.gameState.ticker, null);
+              }
+            }
+            broadcastHostedRoom(hostedRoomState);
+            cleanupHostSession(false);
+          } else {
+            cleanupHostSession(true);
+          }
+        } else {
+          dispatchRoomAction(roomId, { type: 'LEAVE', uid: currentUserId });
+        }
+      }
+
+      currentRoomId = null;
+      stopRoomPolling();
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      state.selectedItemIdx = null;
+      document.getElementById('adrenaline-steal-prompt').classList.add('hidden');
+      document.getElementById('jammer-target-prompt').classList.add('hidden');
+      document.getElementById('gameover-modal').classList.add('hidden');
+      document.getElementById('waiting-room-modal').classList.add('hidden');
+      document.getElementById('hud-layer').classList.add('hidden');
+      document.getElementById('menu-screen').classList.remove('hidden');
+    };
+
+    /* -----------------------------------------------------------
+       HOST-AUTHORITATIVE MULTIPLAYER ACTION PROCESSOR
+    ----------------------------------------------------------- */
+    function processHostAction(action) {
+      const room = hostedRoomState;
+      if (!room || !action) return;
+
+      if (action.type === 'JOIN') {
+        if (action.password !== room.password) return;
+        const inPlayers = (room.players || []).some(p => p.uid === action.uid);
+        const inSpecs = (room.spectators || []).some(s => s.uid === action.uid);
+        if (!inPlayers && !inSpecs) {
+          if (room.status === 'waiting' && (room.players || []).length < 4) {
+            room.players.push({
+              uid: action.uid,
+              name: (action.name || 'GUEST').slice(0, 12),
+              hp: 4, maxHp: 4, items: [], skipped: false, dead: false, suddenDeath: false
+            });
+          } else {
+            room.spectators = [...(room.spectators || []), { uid: action.uid, name: (action.name || 'SPEC').slice(0, 12) }];
+          }
+          broadcastHostedRoom(room);
+        }
+        return;
+      }
+
+      if (action.type === 'LEAVE') {
+        const beforeP = (room.players || []).length;
+        room.players = (room.players || []).filter(p => p.uid !== action.uid);
+        room.spectators = (room.spectators || []).filter(s => s.uid !== action.uid);
+
+        if (room.status === 'playing' && room.gameState && beforeP !== room.players.length) {
+          const gs = room.gameState;
+          const leaver = gs.players.find(p => p.uid === action.uid);
+          if (leaver && !leaver.dead) {
+            leaver.hp = 0;
+            leaver.dead = true;
+            const msg = `🚪 ${leaver.name}님이 방을 나갔습니다.`;
+            const wasTurn = gs.players[gs.currentTurnIdx]?.uid === action.uid;
+            advanceOnlineGameTurn(gs, !wasTurn, msg, null);
+            return;
+          }
+        }
+        broadcastHostedRoom(room);
+        return;
+      }
+
+      if (room.status !== 'playing' || !room.gameState) return;
+      const gs = room.gameState;
+      const currPlayer = gs.players[gs.currentTurnIdx];
+      if (!currPlayer || currPlayer.uid !== action.uid || currPlayer.dead) return;
+
+      if (action.type === 'USE_ITEM') {
+        hostApplyItemUsage(room, currPlayer, action.slotIdx, action.itemId, false);
+      } else if (action.type === 'STEAL_ITEM') {
+        const victim = gs.players.find(p => p.uid === action.victimUid && !p.dead);
+        if (!victim) return;
+        const stolenId = victim.items[action.itemIdx];
+        if (!stolenId || stolenId === 'adrenaline') return;
+        victim.items.splice(action.itemIdx, 1);
+        gs.ticker = `💉 ${currPlayer.name}이(가) ${victim.name}의 [${ITEM_DEFS[stolenId].name}]을(를) 훔쳐 사용합니다!`;
+        hostApplyItemUsage(room, currPlayer, null, stolenId, true);
+      } else if (action.type === 'JAM_PLAYER') {
+        const target = gs.players.find(p => p.uid === action.targetUid && !p.dead && !p.skipped);
+        if (!target) return;
+        target.skipped = true;
+        gs.syncRev = (gs.syncRev || 0) + 1;
+        gs.ticker = `📡 ${currPlayer.name}이(가) ${target.name}에게 재머를 사용해 다음 턴을 차단했습니다!`;
+        broadcastHostedRoom(room);
+      } else if (action.type === 'FIRE_SHOTGUN') {
+        hostApplyShotgunFire(room, currPlayer, action.targetUid);
+      }
+    }
+
+    function hostApplyItemUsage(room, user, slotIdx, itemId, isStolen) {
+      const gs = room.gameState;
+      const curHp = Number(user.hp) || 0;
+      const maxHp = Number(user.maxHp) || 4;
+      user.hp = curHp;
+      user.maxHp = maxHp;
+
+      if (!isStolen) {
+        if (slotIdx === null || slotIdx < 0 || slotIdx >= user.items.length) return;
+        if (itemId && user.items[slotIdx] !== itemId) return;
+        const actualItemId = user.items[slotIdx];
+        if ((actualItemId === 'cigarette' || actualItemId === 'medicine') && curHp >= maxHp) {
+          gs.ticker = `⚠️ ${user.name}: 이미 최대 체력입니다!`;
+          broadcastHostedRoom(room);
+          return;
+        }
+        itemId = actualItemId;
+        user.items.splice(slotIdx, 1);
+      }
+
+      gs.syncRev = (gs.syncRev || 0) + 1;
+      gs.lastHeal = null;
+      let tickerMsg = '';
+
+      switch (itemId) {
+        case 'magnifier': {
+          const shell = gs.shells[0];
+          tickerMsg = `🔍 ${user.name}이(가) 돋보기로 약실을 확인했습니다.`;
+          sendPrivateIntelToPlayer(
+            room.id, user.uid, '🔍', '돋보기 약실 확인',
+            shell === 'live'
+              ? '<span class="text-red-500 text-lg">현재 약실: 실탄 (LIVE)</span>'
+              : '<span class="text-blue-400 text-lg">현재 약실: 공포탄 (BLANK)</span>'
+          );
+          break;
+        }
+        case 'beer': {
+          const ejected = gs.shells.shift();
+          tickerMsg = `🍺 ${user.name}이(가) 맥주를 마시고 [${ejected === 'live' ? '실탄' : '공포탄'}]을 배출했습니다!`;
+          if (gs.shells.length === 0) {
+            hostReloadOnlineChamber(room, tickerMsg);
+            return;
+          }
+          break;
+        }
+        case 'cigarette': {
+          if (curHp < maxHp) {
+            user.hp = Math.min(maxHp, curHp + 1);
+            gs.lastHeal = { id: Date.now(), uid: user.uid, fromIdx: curHp, toIdx: user.hp };
+            tickerMsg = `🚬 ${user.name}이(가) 담배를 피워 체력 +1 회복! (${curHp} → ${user.hp})`;
+          } else {
+            tickerMsg = `⚠️ 이미 최대 체력입니다!`;
+          }
+          break;
+        }
+        case 'handsaw': {
+          gs.sawedOff = true;
+          tickerMsg = `🪚 ${user.name}이(가) 쇠톱으로 총열을 절단했습니다! (피해량 2배)`;
+          break;
+        }
+        case 'phone': {
+          tickerMsg = `📱 ${user.name}이(가) 대포폰으로 탄환 정보를 수신했습니다.`;
+          if (gs.shells.length <= 1) {
+            sendPrivateIntelToPlayer(room.id, user.uid, '📱', '대포폰 수신', '<span class="text-amber-400">"남은 탄환이 1발뿐이다..."</span>');
+          } else {
+            const randIdx = Math.floor(Math.random() * gs.shells.length);
+            const targetShell = gs.shells[randIdx];
+            const color = targetShell === 'live' ? 'text-red-500' : 'text-blue-400';
+            const label = targetShell === 'live' ? '실탄 (LIVE)' : '공포탄 (BLANK)';
+            sendPrivateIntelToPlayer(
+              room.id, user.uid, '📱', '대포폰 익명 제보',
+              `현재 기준 <span class="text-white underline">${randIdx + 1}번째 탄환</span>은<br><span class="${color} text-lg">${label}</span> 입니다.`
+            );
+          }
+          break;
+        }
+        case 'inverter': {
+          gs.shells[0] = gs.shells[0] === 'live' ? 'blank' : 'live';
+          tickerMsg = `🔄 ${user.name}이(가) 변환기를 작동해 현재 탄환 성질을 반전시켰습니다!`;
+          break;
+        }
+        case 'medicine': {
+          if (Math.random() < 0.5) {
+            if (curHp < maxHp) {
+              user.hp = Math.min(maxHp, curHp + 2);
+              const gained = user.hp - curHp;
+              gs.lastHeal = { id: Date.now(), uid: user.uid, fromIdx: curHp, toIdx: user.hp };
+              tickerMsg = `💊 기적! ${user.name}이(가) 약을 복용하고 체력 +${gained} 회복! (${curHp} → ${user.hp})`;
+            } else {
+              tickerMsg = `⚠️ 이미 최대 체력입니다!`;
+            }
+          } else {
+            user.hp = Math.max(0, curHp - 1);
+            tickerMsg = `💊 부작용! ${user.name}이(가) 상한 약을 먹고 체력 -1 감소!`;
+            gs.lastEvent = { type: 'blast', id: Date.now() };
+            if (user.hp === 0) {
+              user.dead = true;
+              advanceOnlineGameTurn(gs, false, tickerMsg, gs.lastEvent);
+              return;
+            }
+          }
+          break;
+        }
+        case 'jammer': {
+          const targets = gs.players.filter(p => p.uid !== user.uid && !p.dead && !p.skipped);
+          if (targets.length === 1) {
+            targets[0].skipped = true;
+            tickerMsg = `📡 ${user.name}이(가) ${targets[0].name}에게 재머를 사용해 다음 턴을 차단했습니다!`;
+          } else {
+            tickerMsg = `📡 ${user.name}이(가) 재머를 가동했습니다!`;
+          }
+          break;
+        }
+        case 'remote': {
+          gs.turnDirection *= -1;
+          tickerMsg = `🎛️ ${user.name}이(가) 리모컨을 눌러 턴 방향을 [${gs.turnDirection === 1 ? '↻ 정방향' : '↺ 역방향'}]으로 반전시켰습니다!`;
+          break;
+        }
+        case 'adrenaline': {
+          tickerMsg = `💉 ${user.name}이(가) 아드레날린을 투여했습니다!`;
+          break;
+        }
+      }
+
+      gs.ticker = tickerMsg;
+      broadcastHostedRoom(room);
+    }
+
+    function hostApplyShotgunFire(room, shooter, targetUid) {
+      const gs = room.gameState;
+      const target = gs.players.find(p => p.uid === targetUid && !p.dead);
+      if (!target || gs.shells.length === 0) return;
+
+      const isSelf = shooter.uid === target.uid;
+      const shell = gs.shells.shift();
+      const dmg = gs.sawedOff ? 2 : 1;
+      gs.sawedOff = false;
+      gs.syncRev = (gs.syncRev || 0) + 1;
+      gs.lastHeal = null;
+
+      let resultMsg = '';
+      let lastEvent = null;
+
+      if (shell === 'live') {
+        target.hp = Math.max(0, (Number(target.hp) || 0) - dmg);
+        if (target.hp === 0) target.dead = true;
+        resultMsg = `💥 탕!! 실탄 발사! ${shooter.name} → ${isSelf ? '자신' : target.name} (${dmg} 데미지!)`;
+        lastEvent = { type: 'blast', id: Date.now() };
+      } else {
+        resultMsg = `*딸깍* — 공포탄이었습니다! ${isSelf ? `${shooter.name} 보너스 턴!` : ''}`;
+        lastEvent = { type: 'blank', id: Date.now() };
+      }
+
+      const keepTurn = (shell === 'blank' && isSelf && !shooter.dead);
+      advanceOnlineGameTurn(gs, keepTurn, resultMsg, lastEvent);
+    }
+
+    function hostReloadOnlineChamber(room, prefixMsg) {
+      const gs = room.gameState;
+      const { shells, liveCount, blankCount } = generateShells(4, 8);
+      gs.shells = shells;
+      gs.sawedOff = false;
+      gs.syncRev = (gs.syncRev || 0) + 1;
+      gs.players.forEach(p => {
+        p.hp = Number(p.hp) || 0;
+        p.maxHp = Number(p.maxHp) || 4;
+        if (!p.dead) {
+          for (let i = 0; i < 2; i++) {
+            if (p.items.length < 8) p.items.push(MP_POOL[Math.floor(Math.random() * MP_POOL.length)]);
+          }
+        }
+      });
+      gs.loadSeq = { id: Date.now(), liveCount, blankCount, itemCount: 2 };
+      gs.ticker = `${prefixMsg} | 새 탄창 장전 (실탄 ${liveCount}/공포 ${blankCount}) & 보급 상자 지급!`;
+      broadcastHostedRoom(room);
+    }
+
+    function advanceOnlineGameTurn(gs, keepTurn, tickerMsg, lastEvent) {
+      const room = hostedRoomState;
+      if (!room) return;
+
+      const alive = gs.players.filter(p => !p.dead);
+      if (alive.length <= 1) {
+        const winnerName = alive[0] ? alive[0].name : '무승부';
+        room.status = 'finished';
+        gs.ticker = `🏆 ${winnerName} 최종 승리!`;
+        gs.winnerName = winnerName;
+        if (lastEvent) gs.lastEvent = lastEvent;
+        broadcastHostedRoom(room);
+        return;
+      }
+
+      const skipNotes = [];
+      if (!keepTurn) {
+        let guard = 0;
+        while (guard < gs.players.length * 2) {
+          gs.currentTurnIdx = (gs.currentTurnIdx + gs.turnDirection + gs.players.length) % gs.players.length;
+          const cand = gs.players[gs.currentTurnIdx];
+          if (cand.dead) { guard++; continue; }
+          if (cand.skipped) {
+            cand.skipped = false;
+            skipNotes.push(`⛓️ ${cand.name} 턴 차단됨!`);
+            guard++;
+            continue;
+          }
+          break;
+        }
+      }
+
+      const fullMsg = skipNotes.length ? `${tickerMsg} (${skipNotes.join(' ')})` : tickerMsg;
+      if (lastEvent) gs.lastEvent = lastEvent;
+
+      if (gs.shells.length === 0) {
+        hostReloadOnlineChamber(room, fullMsg);
+      } else {
+        gs.ticker = fullMsg;
+        broadcastHostedRoom(room);
+      }
+    }
+
+    /* -----------------------------------------------------------
+       2. PROCEDURAL WEB AUDIO SYNTHESIZER
+    ----------------------------------------------------------- */
+    class SoundFX {
+      constructor() { this.ctx = null; this.muted = false; }
+      init() {
+        if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+      }
+      toggleMute() {
+        this.muted = !this.muted;
+        document.getElementById('menu-mute-btn').textContent = this.muted ? '🔇 OFF' : '🔊 ON';
+        document.getElementById('hud-mute-btn').textContent = this.muted ? '🔇' : '🔊';
+      }
+      playClick(freq = 640) {
+        if (this.muted) return;
+        try {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(110, this.ctx.currentTime + 0.08);
+          g.gain.setValueAtTime(0.3, this.ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.08);
+          osc.connect(g); g.connect(this.ctx.destination);
+          osc.start(); osc.stop(this.ctx.currentTime + 0.09);
+        } catch (e) {}
+      }
+      playCrateLatch() {
+        if (this.muted) return;
+        try {
+          this.init();
+          [0, 0.09].forEach((d, i) => {
+            const osc = this.ctx.createOscillator();
+            const g = this.ctx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(i === 0 ? 220 : 340, this.ctx.currentTime + d);
+            osc.frequency.exponentialRampToValueAtTime(90, this.ctx.currentTime + d + 0.08);
+            g.gain.setValueAtTime(0.25, this.ctx.currentTime + d);
+            g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + d + 0.08);
+            osc.connect(g); g.connect(this.ctx.destination);
+            osc.start(this.ctx.currentTime + d);
+            osc.stop(this.ctx.currentTime + d + 0.09);
+          });
+        } catch (e) {}
+      }
+      playPump() {
+        if (this.muted) return;
+        try {
+          this.init();
+          [0, 0.14].forEach((delay, idx) => {
+            const len = this.ctx.sampleRate * 0.09;
+            const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+            const data = buf.getChannelData(0);
+            for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (len * 0.35));
+            const src = this.ctx.createBufferSource();
+            src.buffer = buf;
+            const filter = this.ctx.createBiquadFilter();
+            filter.type = 'bandpass';
+            filter.frequency.value = idx === 0 ? 920 : 1380;
+            const g = this.ctx.createGain();
+            g.gain.value = 0.45;
+            src.connect(filter); filter.connect(g); g.connect(this.ctx.destination);
+            src.start(this.ctx.currentTime + delay);
+          });
+        } catch (e) {}
+      }
+      playBlast() {
+        if (this.muted) return;
+        try {
+          this.init();
+          const dur = 0.7;
+          const len = this.ctx.sampleRate * dur;
+          const buf = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
+          const data = buf.getChannelData(0);
+          for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (this.ctx.sampleRate * 0.16));
+          const src = this.ctx.createBufferSource();
+          src.buffer = buf;
+          const filter = this.ctx.createBiquadFilter();
+          filter.type = 'lowpass';
+          filter.frequency.setValueAtTime(1150, this.ctx.currentTime);
+          filter.frequency.exponentialRampToValueAtTime(85, this.ctx.currentTime + dur);
+          const g = this.ctx.createGain();
+          g.gain.setValueAtTime(0.95, this.ctx.currentTime);
+          g.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + dur);
+          src.connect(filter); filter.connect(g); g.connect(this.ctx.destination);
+          src.start();
+
+          const sub = this.ctx.createOscillator();
+          const sg = this.ctx.createGain();
+          sub.type = 'sine';
+          sub.frequency.setValueAtTime(135, this.ctx.currentTime);
+          sub.frequency.exponentialRampToValueAtTime(26, this.ctx.currentTime + 0.38);
+          sg.gain.setValueAtTime(0.85, this.ctx.currentTime);
+          sg.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + 0.38);
+          sub.connect(sg); sg.connect(this.ctx.destination);
+          sub.start(); sub.stop(this.ctx.currentTime + 0.39);
+        } catch (e) {}
+      }
+      playItemUse(good = true) {
+        if (this.muted) return;
+        try {
+          this.init();
+          const osc = this.ctx.createOscillator();
+          const g = this.ctx.createGain();
+          osc.type = 'sine';
+          const now = this.ctx.currentTime;
+          osc.frequency.setValueAtTime(good ? 480 : 280, now);
+          osc.frequency.setValueAtTime(good ? 720 : 150, now + 0.08);
+          g.gain.setValueAtTime(0.24, now);
+          g.gain.exponentialRampToValueAtTime(0.01, now + 0.22);
+          osc.connect(g); g.connect(this.ctx.destination);
+          osc.start(); osc.stop(now + 0.23);
+        } catch (e) {}
+      }
+    }
+    const sfx = new SoundFX();
+    window.toggleMute = () => sfx.toggleMute();
+
+    /* -----------------------------------------------------------
+       3. ITEM DEFINITIONS (ALL 11 ITEMS)
+    ----------------------------------------------------------- */
+    const ITEM_DEFS = {
+      magnifier: {
+        id: 'magnifier', name: '돋보기', tag: '공용', color: 0x38bdf8,
+        desc: '현재 약실의 탄환(실탄/공포탄)을 몰래 확인합니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><circle cx="17" cy="17" r="10" fill="rgba(41,151,255,0.22)" stroke="#93c5fd" stroke-width="2.5"/><line x1="25" y1="25" x2="35" y2="35" stroke="#d97706" stroke-width="4" stroke-linecap="round"/></svg>`
+      },
+      beer: {
+        id: 'beer', name: '맥주', tag: '공용', color: 0xf59e0b,
+        desc: '현재 약실의 탄환을 발사하지 않고 밖으로 배출합니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="12" y="12" width="16" height="22" rx="2" fill="#d97706" stroke="#fbbf24" stroke-width="1.5"/><path d="M12 12 Q20 6 28 12" fill="#f3f4f6"/></svg>`
+      },
+      cigarette: {
+        id: 'cigarette', name: '담배', tag: '공용', color: 0xf97316,
+        desc: '체력을 1칸 회복합니다. (서든데스 시 회복 불가)',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="6" y="18" width="22" height="6" fill="#f3f4f6"/><rect x="28" y="18" width="6" height="6" fill="#ea580c"/><circle cx="5" cy="21" r="2" fill="#ef4444"/></svg>`
+      },
+      handsaw: {
+        id: 'handsaw', name: '쇠톱', tag: '공용', color: 0xef4444,
+        desc: '총열을 잘라 다음 1회 사격 피해량을 2배(2 DMG)로 만듭니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><path d="M6 14 L28 14 L26 24 L6 20 Z" fill="#9ca3af"/><path d="M28 12 L35 12 L35 26 L27 26 Z" fill="#b45309"/></svg>`
+      },
+      handcuffs: {
+        id: 'handcuffs', name: '수갑', tag: '1인용', color: 0x9ca3af,
+        desc: '상대의 다음 턴을 1회 건너뜁니다. (연속 사용 불가)',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><circle cx="12" cy="24" r="7" fill="none" stroke="#9ca3af" stroke-width="3"/><circle cx="28" cy="24" r="7" fill="none" stroke="#9ca3af" stroke-width="3"/><line x1="17" y1="19" x2="23" y2="19" stroke="#d1d5db" stroke-width="2.5"/></svg>`
+      },
+      phone: {
+        id: 'phone', name: '대포폰', tag: '공용', color: 0x39ff14,
+        desc: '남은 탄창 중 무작위 순서 탄환 1개의 정체를 알려줍니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="12" y="8" width="16" height="26" rx="2" fill="#1f2937" stroke="#6b7280" stroke-width="2"/><rect x="15" y="12" width="10" height="9" fill="#39ff14"/></svg>`
+      },
+      inverter: {
+        id: 'inverter', name: '변환기', tag: '공용', color: 0x06b6d4,
+        desc: '현재 약실의 탄환을 반대로 바꿉니다. (실탄 ↔ 공포탄)',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="9" y="11" width="22" height="18" rx="3" fill="#374151" stroke="#38bdf8" stroke-width="2"/><path d="M14 20 L26 20" stroke="#38bdf8" stroke-width="2"/></svg>`
+      },
+      adrenaline: {
+        id: 'adrenaline', name: '아드레날린', tag: '공용', color: 0xf43f5e,
+        desc: '상대의 아이템 1개를 훔쳐 즉시 사용합니다. (아드레날린 제외)',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="16" y="10" width="8" height="18" fill="rgba(239,68,68,0.45)" stroke="#f87171" stroke-width="2"/><line x1="20" y1="4" x2="20" y2="10" stroke="#e5e7eb" stroke-width="2"/></svg>`
+      },
+      medicine: {
+        id: 'medicine', name: '유통기한 지난 약', tag: '공용', color: 0xfb923c,
+        desc: '50% 확률로 체력 +2 회복, 50% 확률로 체력 -1 감소합니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="12" y="13" width="16" height="20" rx="2" fill="#7c2d12" stroke="#fb923c" stroke-width="2"/><text x="20" y="27" text-anchor="middle" fill="#fed7aa" font-size="11" font-weight="bold">?</text></svg>`
+      },
+      jammer: {
+        id: 'jammer', name: '재머', tag: '온라인', color: 0x818cf8,
+        desc: '지목한 상대 플레이어 1명의 다음 턴을 차단합니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="10" y="14" width="20" height="16" rx="2" fill="#312e81" stroke="#818cf8" stroke-width="2"/><circle cx="20" cy="22" r="3" fill="#f43f5e"/></svg>`
+      },
+      remote: {
+        id: 'remote', name: '리모컨', tag: '온라인', color: 0xfbbf24,
+        desc: '게임의 턴 진행 방향(시계 ↔ 반시계)을 반전시킵니다.',
+        svg: `<svg viewBox="0 0 40 40" class="w-5 h-5"><rect x="13" y="8" width="14" height="24" rx="3" fill="#1e293b" stroke="#fbbf24" stroke-width="2"/><circle cx="20" cy="14" r="2.5" fill="#ef4444"/></svg>`
+      }
+    };
+
+    const SP_POOL = ['magnifier', 'beer', 'cigarette', 'handsaw', 'handcuffs', 'phone', 'inverter', 'adrenaline', 'medicine'];
+    const MP_POOL = ['magnifier', 'beer', 'cigarette', 'handsaw', 'jammer', 'remote', 'phone', 'inverter', 'adrenaline', 'medicine'];
+
+    /* -----------------------------------------------------------
+       4. THREE.JS 3D WEBGL SCENE, AUTOMATIC CRATES & AUTHENTIC CAMERAS
+    ----------------------------------------------------------- */
+    let scene, camera, renderer, raycaster, mouseVec;
+    let dealerGroup, dealerHead, dealerEyeL, dealerEyeR, dealerHandL, dealerHandR;
+    let shotgunGroup, barrelTipMesh, sawedGlowRing;
+    let playerCrateGroup, playerCrateLid, dealerCrateGroup, dealerCrateLid;
+    let tableItemMeshes = [];
+    let flyingProps = [];
+    let crtCanvas, crtCtx, crtTexture;
+    let overheadLight;
+
+    const CAM_ANGLES = {
+      tableDefault: { pos: new THREE.Vector3(0, 3.85, 5.65),  look: new THREE.Vector3(0, 1.05, -1.35) },
+      crateInspect: { pos: new THREE.Vector3(0, 4.45, 3.35),  look: new THREE.Vector3(0, 0.25, 0.15) },
+      crtMonitor:   { pos: new THREE.Vector3(-2.1, 2.35, 2.0), look: new THREE.Vector3(-2.85, 1.25, -1.7) },
+      shotgunReady: { pos: new THREE.Vector3(0, 3.15, 4.95),  look: new THREE.Vector3(0, 1.15, -1.2) },
+      aimAtDealer:  { pos: new THREE.Vector3(0, 2.25, 2.85),  look: new THREE.Vector3(0, 2.15, -3.2) },
+      aimAtSelf:    { pos: new THREE.Vector3(0, 2.15, 3.55),  look: new THREE.Vector3(0, 1.65, 1.85) },
+      dealerAction: { pos: new THREE.Vector3(0.35, 3.1, 4.55), look: new THREE.Vector3(0, 2.15, -3.1) }
+    };
+
+    let targetCamPos = CAM_ANGLES.tableDefault.pos.clone();
+    let targetCamLook = CAM_ANGLES.tableDefault.look.clone();
+    let currentCamLook = CAM_ANGLES.tableDefault.look.clone();
+    let pointerParallax = { x: 0, y: 0 };
+
+    let shotgunTargetPos = new THREE.Vector3(0, 0.34, 0.25);
+    let shotgunTargetRot = new THREE.Euler(0, 0, 0);
+
+    function setCameraAngle(key) {
+      if (!CAM_ANGLES[key]) return;
+      targetCamPos.copy(CAM_ANGLES[key].pos);
+      targetCamLook.copy(CAM_ANGLES[key].look);
+    }
+
+    function initThreeScene() {
+      const canvas = document.getElementById('webgl-canvas');
+      scene = new THREE.Scene();
+      scene.background = new THREE.Color(0x040506);
+      scene.fog = new THREE.FogExp2(0x040506, 0.062);
+
+      camera = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.1, 100);
+      camera.position.copy(CAM_ANGLES.tableDefault.pos);
+
+      renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+      raycaster = new THREE.Raycaster();
+      mouseVec = new THREE.Vector2();
+
+      scene.add(new THREE.AmbientLight(0x283038, 0.9));
+
+      overheadLight = new THREE.SpotLight(0xffdca8, 2.7, 24, Math.PI / 3.0, 0.45, 1.1);
+      overheadLight.position.set(0, 7.6, 0.1);
+      overheadLight.castShadow = true;
+      overheadLight.shadow.mapSize.width = 1024;
+      overheadLight.shadow.mapSize.height = 1024;
+      scene.add(overheadLight);
+
+      const crtGlow = new THREE.PointLight(0x39ff14, 0.95, 7);
+      crtGlow.position.set(-2.85, 1.5, -1.4);
+      scene.add(crtGlow);
+
+      const dealerRim = new THREE.PointLight(0xff2a2a, 0.7, 8);
+      dealerRim.position.set(0, 3.2, -4.5);
+      scene.add(dealerRim);
+
+      buildIndustrialTable();
+      buildCrtMonitor();
+      buildDealerModel();
+      buildShotgunModel();
+      buildSupplyCrates();
+
+      window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        pointerParallax.x = (e.clientX / window.innerWidth - 0.5) * 2;
+        pointerParallax.y = (e.clientY / window.innerHeight - 0.5) * 2;
+      });
+
+      canvas.addEventListener('click', (e) => {
+        if (document.getElementById('hud-layer').classList.contains('hidden')) return;
+        mouseVec.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouseVec.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouseVec, camera);
+
+        const gunHits = raycaster.intersectObjects(shotgunGroup.children, true);
+        if (gunHits.length > 0) {
+          window.onPickupShotgunClick();
+          return;
+        }
+
+        const playerMeshes = tableItemMeshes.filter(m => m.userData.ownerSide === 'player');
+        const itemHits = raycaster.intersectObjects(playerMeshes, false);
+        if (itemHits.length > 0) {
+          const slotIdx = itemHits[0].object.userData.slotIdx;
+          window.onHudItemClick(slotIdx, e.clientX, e.clientY);
+        }
+      });
+    }
+
+    function buildIndustrialTable() {
+      const table = new THREE.Mesh(
+        new THREE.BoxGeometry(8.6, 0.45, 5.4),
+        new THREE.MeshStandardMaterial({ color: 0x1a1d21, roughness: 0.7, metalness: 0.55 })
+      );
+      table.position.set(0, -0.22, 0);
+      table.receiveShadow = true;
+      scene.add(table);
+
+      const trimMat = new THREE.MeshStandardMaterial({ color: 0x2e343c, roughness: 0.5, metalness: 0.75 });
+      const frontTrim = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.54, 0.18), trimMat);
+      frontTrim.position.set(0, -0.18, 2.7);
+      scene.add(frontTrim);
+
+      const backTrim = new THREE.Mesh(new THREE.BoxGeometry(8.8, 0.54, 0.18), trimMat);
+      backTrim.position.set(0, -0.18, -2.7);
+      scene.add(backTrim);
+
+      const padGeo = new THREE.BoxGeometry(0.66, 0.025, 0.66);
+      const padMat = new THREE.MeshStandardMaterial({ color: 0x0c0e11, roughness: 0.9 });
+      for (const side of [-1, 1]) {
+        for (let r = 0; r < 2; r++) {
+          for (let c = 0; c < 4; c++) {
+            const pad = new THREE.Mesh(padGeo, padMat);
+            pad.position.set((c - 1.5) * 0.82, 0.014, side * (1.25 + r * 0.78));
+            pad.receiveShadow = true;
+            scene.add(pad);
+          }
+        }
+      }
+    }
+
+    function buildCrtMonitor() {
+      const group = new THREE.Group();
+      group.position.set(-2.95, 0.92, -1.75);
+      group.rotation.y = 0.44;
+
+      const casing = new THREE.Mesh(
+        new THREE.BoxGeometry(1.65, 1.35, 1.35),
+        new THREE.MeshStandardMaterial({ color: 0x22262b, roughness: 0.65, metalness: 0.45 })
+      );
+      casing.castShadow = true;
+      group.add(casing);
+
+      crtCanvas = document.createElement('canvas');
+      crtCanvas.width = 256;
+      crtCanvas.height = 192;
+      crtCtx = crtCanvas.getContext('2d');
+      crtTexture = new THREE.CanvasTexture(crtCanvas);
+
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.38, 1.05),
+        new THREE.MeshBasicMaterial({ map: crtTexture })
+      );
+      screen.position.set(0, 0.05, 0.685);
+      group.add(screen);
+
+      updateCrtScreenTexture('SYSTEM READY', 0, 0);
+      scene.add(group);
+    }
+
+    function updateCrtScreenTexture(title, liveCount, blankCount) {
+      if (!crtCtx) return;
+      crtCtx.fillStyle = '#050d07';
+      crtCtx.fillRect(0, 0, 256, 192);
+      crtCtx.strokeStyle = '#39ff14';
+      crtCtx.lineWidth = 4;
+      crtCtx.strokeRect(8, 8, 240, 176);
+
+      crtCtx.fillStyle = '#39ff14';
+      crtCtx.font = 'bold 18px monospace';
+      crtCtx.textAlign = 'center';
+      crtCtx.fillText(title, 128, 36);
+
+      if (liveCount > 0 || blankCount > 0) {
+        crtCtx.fillStyle = '#ff3b3b';
+        crtCtx.font = 'bold 21px monospace';
+        crtCtx.fillText(`LIVE  : ${liveCount}`, 128, 82);
+
+        crtCtx.fillStyle = '#3b9eff';
+        crtCtx.fillText(`BLANK : ${blankCount}`, 128, 118);
+
+        const total = liveCount + blankCount;
+        const startX = 128 - (total * 21) / 2;
+        for (let i = 0; i < total; i++) {
+          crtCtx.fillStyle = i < liveCount ? '#ff2a2a' : '#2997ff';
+          crtCtx.fillRect(startX + i * 21, 138, 14, 30);
+        }
+      } else {
+        crtCtx.fillStyle = '#ffb000';
+        crtCtx.font = '15px monospace';
+        crtCtx.fillText('12-GAUGE CHAMBER', 128, 105);
+      }
+      if (crtTexture) crtTexture.needsUpdate = true;
+    }
+
+    function buildDealerModel() {
+      dealerGroup = new THREE.Group();
+      dealerGroup.position.set(0, 2.25, -3.15);
+
+      dealerHead = new THREE.Group();
+      const skull = new THREE.Mesh(
+        new THREE.SphereGeometry(0.78, 24, 24),
+        new THREE.MeshStandardMaterial({ color: 0x15171b, roughness: 0.85, metalness: 0.15 })
+      );
+      skull.scale.set(0.92, 1.18, 0.95);
+      skull.castShadow = true;
+      dealerHead.add(skull);
+
+      const eyeMat = new THREE.MeshBasicMaterial({ color: 0xffb000 });
+      dealerEyeL = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 12), eyeMat);
+      dealerEyeL.position.set(-0.26, 0.14, 0.68);
+      dealerHead.add(dealerEyeL);
+
+      dealerEyeR = new THREE.Mesh(new THREE.SphereGeometry(0.11, 12, 12), eyeMat);
+      dealerEyeR.position.set(0.26, 0.14, 0.68);
+      dealerHead.add(dealerEyeR);
+
+      const toothMat = new THREE.MeshBasicMaterial({ color: 0xe5e7eb });
+      for (let i = -3; i <= 3; i++) {
+        const tooth = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.13, 0.05), toothMat);
+        tooth.position.set(i * 0.1, Math.abs(i) * 0.032 - 0.34, 0.72);
+        dealerHead.add(tooth);
+      }
+      dealerGroup.add(dealerHead);
+
+      const handGeo = new THREE.BoxGeometry(0.45, 0.22, 0.55);
+      const handMat = new THREE.MeshStandardMaterial({ color: 0x111215, roughness: 0.6 });
+      dealerHandL = new THREE.Mesh(handGeo, handMat);
+      dealerHandL.position.set(-1.35, -1.75, 1.25);
+      dealerGroup.add(dealerHandL);
+
+      dealerHandR = new THREE.Mesh(handGeo, handMat);
+      dealerHandR.position.set(1.35, -1.75, 1.25);
+      dealerGroup.add(dealerHandR);
+
+      scene.add(dealerGroup);
+    }
+
+    function buildShotgunModel() {
+      shotgunGroup = new THREE.Group();
+      shotgunGroup.position.copy(shotgunTargetPos);
+
+      const woodMat = new THREE.MeshStandardMaterial({ color: 0x593116, roughness: 0.7 });
+      const steelMat = new THREE.MeshStandardMaterial({ color: 0x3b414a, roughness: 0.35, metalness: 0.8 });
+      const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x1d2024, roughness: 0.45, metalness: 0.75 });
+
+      const stock = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.24, 0.16), woodMat);
+      stock.position.set(-1.1, -0.05, 0);
+      stock.rotation.z = 0.14;
+      stock.castShadow = true;
+      shotgunGroup.add(stock);
+
+      const receiver = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.24, 0.18), darkSteelMat);
+      receiver.position.set(-0.3, 0.04, 0);
+      receiver.castShadow = true;
+      shotgunGroup.add(receiver);
+
+      const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.3, 12), steelMat);
+      barrel.rotation.z = Math.PI / 2;
+      barrel.position.set(0.75, 0.09, 0);
+      barrel.castShadow = true;
+      shotgunGroup.add(barrel);
+
+      barrelTipMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.046, 0.046, 0.48, 12), steelMat);
+      barrelTipMesh.rotation.z = Math.PI / 2;
+      barrelTipMesh.position.set(1.62, 0.09, 0);
+      shotgunGroup.add(barrelTipMesh);
+
+      sawedGlowRing = new THREE.Mesh(
+        new THREE.TorusGeometry(0.065, 0.015, 8, 16),
+        new THREE.MeshBasicMaterial({ color: 0xff2a2a })
+      );
+      sawedGlowRing.rotation.y = Math.PI / 2;
+      sawedGlowRing.position.set(1.38, 0.09, 0);
+      sawedGlowRing.visible = false;
+      shotgunGroup.add(sawedGlowRing);
+
+      const magTube = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.036, 1.15, 10), darkSteelMat);
+      magTube.rotation.z = Math.PI / 2;
+      magTube.position.set(0.68, 0.01, 0);
+      shotgunGroup.add(magTube);
+
+      const pump = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.13, 0.15), woodMat);
+      pump.position.set(0.65, 0.0, 0);
+      shotgunGroup.add(pump);
+
+      scene.add(shotgunGroup);
+    }
+
+    function createSingleCrate(x, z) {
+      const group = new THREE.Group();
+      group.position.set(x, -0.5, z);
+      group.visible = false;
+
+      const mat = new THREE.MeshStandardMaterial({ color: 0x262c34, roughness: 0.45, metalness: 0.75 });
+      const base = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.22, 0.8), mat);
+      base.castShadow = true;
+      group.add(base);
+
+      const glow = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.0, 0.65),
+        new THREE.MeshBasicMaterial({ color: 0x452b06 })
+      );
+      glow.rotation.x = -Math.PI / 2;
+      glow.position.y = 0.115;
+      group.add(glow);
+
+      const lidPivot = new THREE.Group();
+      lidPivot.position.set(0, 0.11, -0.4);
+      const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.08, 0.8), mat);
+      lidMesh.position.set(0, 0.04, 0.4);
+      lidPivot.add(lidMesh);
+      group.add(lidPivot);
+
+      scene.add(group);
+      return { group, lidPivot };
+    }
+
+    function buildSupplyCrates() {
+      const pCrate = createSingleCrate(-2.35, 1.25);
+      playerCrateGroup = pCrate.group;
+      playerCrateLid = pCrate.lidPivot;
+
+      const dCrate = createSingleCrate(2.35, -1.25);
+      dealerCrateGroup = dCrate.group;
+      dealerCrateLid = dCrate.lidPivot;
+    }
+
+    function getSlot3DPosition(side, slotIdx) {
+      const row = Math.floor(slotIdx / 4);
+      const col = slotIdx % 4;
+      const x = (col - 1.5) * 0.82;
+      const z = (side === 'player' ? 1 : -1) * (1.25 + row * 0.78);
+      return new THREE.Vector3(x, 0.18, z);
+    }
+
+    function create3DItemProp(itemId) {
+      const def = ITEM_DEFS[itemId] || ITEM_DEFS.beer;
+      const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(0.42, 0.32, 0.42),
+        new THREE.MeshStandardMaterial({ color: def.color, roughness: 0.35, metalness: 0.4 })
+      );
+      mesh.castShadow = true;
+      return mesh;
+    }
+
+    function sync3DTableItems() {
+      tableItemMeshes.forEach(m => scene.remove(m));
+      tableItemMeshes = [];
+
+      const me = getMyPlayer();
+      if (!me) return;
+
+      me.items.forEach((itemId, idx) => {
+        const mesh = create3DItemProp(itemId);
+        mesh.position.copy(getSlot3DPosition('player', idx));
+        mesh.userData = { ownerSide: 'player', slotIdx: idx, itemId };
+        scene.add(mesh);
+        tableItemMeshes.push(mesh);
+      });
+
+      const opp = state.players.find(p => p.uid !== me.uid && !p.dead);
+      if (opp) {
+        opp.items.forEach((itemId, idx) => {
+          const mesh = create3DItemProp(itemId);
+          mesh.position.copy(getSlot3DPosition('dealer', idx));
+          mesh.userData = { ownerSide: 'dealer', slotIdx: idx, itemId };
+          scene.add(mesh);
+          tableItemMeshes.push(mesh);
+        });
+      }
+    }
+
+    function animate3DLoop(timeMs) {
+      requestAnimationFrame(animate3DLoop);
+      const t = timeMs * 0.001;
+
+      if (overheadLight) {
+        overheadLight.position.x = Math.sin(t * 0.85) * 0.32;
+        overheadLight.intensity = Math.random() < 0.012 ? 1.6 : 2.6 + Math.sin(t * 3) * 0.1;
+      }
+
+      if (dealerGroup && dealerHead) {
+        dealerGroup.position.y = 2.25 + Math.sin(t * 1.9) * 0.055;
+        dealerHead.rotation.y = THREE.MathUtils.lerp(dealerHead.rotation.y, pointerParallax.x * 0.25, 0.05);
+        dealerHead.rotation.x = THREE.MathUtils.lerp(dealerHead.rotation.x, 0.12 + pointerParallax.y * 0.1, 0.05);
+        dealerHandL.position.y = -1.75 + Math.sin(t * 2.2) * 0.04;
+        dealerHandR.position.y = -1.75 + Math.cos(t * 2.2) * 0.04;
+      }
+
+      if (shotgunGroup) {
+        shotgunGroup.position.lerp(shotgunTargetPos, 0.14);
+        shotgunGroup.rotation.x = THREE.MathUtils.lerp(shotgunGroup.rotation.x, shotgunTargetRot.x, 0.14);
+        shotgunGroup.rotation.y = THREE.MathUtils.lerp(shotgunGroup.rotation.y, shotgunTargetRot.y, 0.14);
+        shotgunGroup.rotation.z = THREE.MathUtils.lerp(shotgunGroup.rotation.z, shotgunTargetRot.z, 0.14);
+      }
+
+      for (let i = flyingProps.length - 1; i >= 0; i--) {
+        const fp = flyingProps[i];
+        fp.progress = Math.min(1, fp.progress + 0.055);
+        const p = fp.progress;
+        fp.mesh.position.lerpVectors(fp.start, fp.end, p);
+        fp.mesh.position.y += Math.sin(p * Math.PI) * 0.85;
+        fp.mesh.rotation.y += 0.15;
+        if (p >= 1) {
+          scene.remove(fp.mesh);
+          flyingProps.splice(i, 1);
+          sync3DTableItems();
+          renderHud();
+        }
+      }
+
+      if (camera) {
+        const desiredPos = targetCamPos.clone();
+        desiredPos.x += pointerParallax.x * 0.24;
+        desiredPos.y += -pointerParallax.y * 0.16 + Math.sin(t * 1.3) * 0.025;
+        camera.position.lerp(desiredPos, 0.08);
+        currentCamLook.lerp(targetCamLook, 0.09);
+        camera.lookAt(currentCamLook);
+      }
+
+      if (renderer && scene && camera) renderer.render(scene, camera);
+    }
+
+    /* -----------------------------------------------------------
+       5. UNIFIED GAME STATE & AUTOMATIC CRATE UNBOXING SEQUENCE
+    ----------------------------------------------------------- */
+    const state = {
+      mode: 'sp',
+      round: 1,
+      maxRounds: 3,
+      players: [],
+      currentTurnIdx: 0,
+      turnDirection: 1,
+      shells: [],
+      sawedOff: false,
+      shotgunPickedUp: false,
+      selectedItemIdx: null,
+      stealingMode: false,
+      jammerTargetingMode: false,
+      isProcessing: false,
+      dealerKnownShell: null,
+      dealerPhoneHints: {},
+      lastEventId: null,
+      lastLoadId: null,
+      lastHealId: null,
+      localSyncRev: 0,
+      optimisticUntil: 0
+    };
+
+    function escapeHtml(str) {
+      return String(str).replace(/[&<>"']/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+    }
+
+    function generateShells(minTotal, maxTotal) {
+      const total = Math.floor(Math.random() * (maxTotal - minTotal + 1)) + minTotal;
+      const liveCount = Math.max(1, Math.min(total - 1, Math.round(total * (0.4 + Math.random() * 0.22))));
+      const blankCount = total - liveCount;
+      const arr = [...Array(liveCount).fill('live'), ...Array(blankCount).fill('blank')];
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return { shells: arr, liveCount, blankCount };
+    }
+
+    window.switchMenuTab = function (tab) {
+      sfx.playClick(580);
+      const spBtn = document.getElementById('mode-tab-sp');
+      const mpBtn = document.getElementById('mode-tab-mp');
+      document.getElementById('panel-sp').classList.toggle('hidden', tab !== 'sp');
+      document.getElementById('panel-mp').classList.toggle('hidden', tab !== 'mp');
+      spBtn.className = tab === 'sp'
+        ? 'py-2.5 rounded-lg bg-red-600 text-white font-bold border border-red-400 shadow'
+        : 'py-2.5 rounded-lg bg-[#15191e] text-neutral-300 hover:text-white border border-[#2e353f]';
+      mpBtn.className = tab === 'mp'
+        ? 'py-2.5 rounded-lg bg-amber-500 text-black font-bold border border-amber-300 shadow'
+        : 'py-2.5 rounded-lg bg-[#15191e] text-neutral-300 hover:text-white border border-[#2e353f]';
+    };
+
+    window.startSingleplayer = function () {
+      sfx.init();
+      sfx.playPump();
+      const name = (document.getElementById('nickname-input').value || 'PLAYER').trim().toUpperCase();
+
+      state.mode = 'sp';
+      state.round = 1;
+      state.maxRounds = 3;
+      state.turnDirection = 1;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      state.players = [
+        { id: 0, uid: currentUserId, name, isAI: false, hp: 2, maxHp: 2, items: [], skipped: false, dead: false, suddenDeath: false },
+        { id: 1, uid: 'dealer-ai', name: 'DEALER', isAI: true, hp: 2, maxHp: 2, items: [], skipped: false, dead: false, suddenDeath: false }
+      ];
+
+      document.getElementById('menu-screen').classList.add('hidden');
+      document.getElementById('hud-layer').classList.remove('hidden');
+      document.getElementById('hud-dir-badge').classList.add('hidden');
+      document.getElementById('spectator-badge').classList.add('hidden');
+
+      setupSingleplayerRound(1);
+    };
+
+    function setupSingleplayerRound(roundNum) {
+      state.round = roundNum;
+      const hpMap = { 1: 2, 2: 4, 3: 5 };
+      const maxHp = hpMap[roundNum] || 4;
+
+      state.players.forEach(p => {
+        p.hp = maxHp;
+        p.maxHp = maxHp;
+        p.items = [];
+        p.skipped = false;
+        p.dead = false;
+        p.suddenDeath = false;
+      });
+
+      state.currentTurnIdx = 0;
+      state.sawedOff = false;
+      state.shotgunPickedUp = false;
+      state.selectedItemIdx = null;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      resetShotgun3DPose();
+
+      document.getElementById('hud-round-badge').textContent =
+        roundNum === 3 ? 'ROUND 3/3 [SUDDEN DEATH]' : `ROUND ${roundNum}/3`;
+
+      startLoadSequence1P();
+    }
+
+    function startLoadSequence1P() {
+      state.isProcessing = true;
+      state.sawedOff = false;
+      state.shotgunPickedUp = false;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      state.dealerKnownShell = null;
+      state.dealerPhoneHints = {};
+      resetShotgun3DPose();
+      sync3DTableItems();
+      renderHud();
+
+      const itemQuota = state.round === 2 ? 2 : (state.round === 3 ? 4 : 0);
+      const { shells, liveCount, blankCount } = state.round === 1
+        ? generateShells(3, 5)
+        : generateShells(4, 8);
+      state.shells = shells;
+
+      setCameraAngle('crtMonitor');
+      updateCrtScreenTexture(`ROUND ${state.round} LOAD`, liveCount, blankCount);
+      sfx.playPump();
+      showTicker(`장전 완료: 실탄 ${liveCount}발 / 공포탄 ${blankCount}발`);
+      renderHud();
+
+      setTimeout(() => {
+        if (itemQuota > 0) {
+          runAutoCrateDistribution(itemQuota, () => {
+            finishLoadAndStartTurn();
+          });
+        } else {
+          finishLoadAndStartTurn();
+        }
+      }, 1900);
+    }
+
+    function runAutoCrateDistribution(countPerPlayer, onComplete) {
+      setCameraAngle('crateInspect');
+      sfx.playCrateLatch();
+      showTicker(`📦 보급 상자가 자동으로 열리며 아이템이 지급됩니다!`);
+
+      playerCrateGroup.visible = true;
+      playerCrateGroup.position.y = 0.11;
+      playerCrateLid.rotation.x = -1.75;
+
+      dealerCrateGroup.visible = true;
+      dealerCrateGroup.position.y = 0.11;
+      dealerCrateLid.rotation.x = -1.75;
+
+      const human = state.players[0];
+      const dealer = state.players[1];
+      let step = 0;
+
+      const interval = setInterval(() => {
+        if (step >= countPerPlayer) {
+          clearInterval(interval);
+          setTimeout(() => {
+            playerCrateGroup.visible = false;
+            dealerCrateGroup.visible = false;
+            sync3DTableItems();
+            renderHud();
+            if (onComplete) onComplete();
+          }, 550);
+          return;
+        }
+
+        if (human && !human.dead && human.items.length < 8) {
+          const itemId = SP_POOL[Math.floor(Math.random() * SP_POOL.length)];
+          const slotIdx = human.items.length;
+          human.items.push(itemId);
+          sfx.playItemUse(true);
+
+          const prop = create3DItemProp(itemId);
+          scene.add(prop);
+          flyingProps.push({
+            mesh: prop,
+            start: new THREE.Vector3(-2.35, 0.35, 1.25),
+            end: getSlot3DPosition('player', slotIdx),
+            progress: 0
+          });
+        }
+
+        if (dealer && !dealer.dead && dealer.items.length < 8) {
+          const itemId = SP_POOL[Math.floor(Math.random() * SP_POOL.length)];
+          const slotIdx = dealer.items.length;
+          dealer.items.push(itemId);
+
+          const prop = create3DItemProp(itemId);
+          scene.add(prop);
+          flyingProps.push({
+            mesh: prop,
+            start: new THREE.Vector3(2.35, 0.35, -1.25),
+            end: getSlot3DPosition('dealer', slotIdx),
+            progress: 0
+          });
+        }
+
+        step++;
+      }, 380);
+    }
+
+    function finishLoadAndStartTurn() {
+      setCameraAngle('tableDefault');
+      state.isProcessing = false;
+      sync3DTableItems();
+      renderHud();
+
+      const curr = getCurrentPlayer();
+      showTicker(`${curr.name}의 턴입니다.`);
+      if (curr.isAI) {
+        setTimeout(() => runDealerTurn(), 850);
+      }
+    }
+
+    /* -----------------------------------------------------------
+       6. ITEM POPOVER ([ 선택 / 취소 ]) CLAMPED STRICTLY INSIDE VIEWPORT
+    ----------------------------------------------------------- */
+    window.onHudItemClick = function (slotIdx, clientX = null, clientY = null) {
+      const me = getMyPlayer();
+      const curr = getCurrentPlayer();
+      if (!me || !curr || me.uid !== curr.uid || state.isProcessing) return;
+
+      const itemId = me.items[slotIdx];
+      if (!itemId) return;
+
+      sfx.playClick(680);
+
+      if (state.selectedItemIdx === slotIdx) {
+        window.cancelSelectedItem();
+        return;
+      }
+
+      state.selectedItemIdx = slotIdx;
+      state.shotgunPickedUp = false;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      resetShotgun3DPose();
+      document.getElementById('shotgun-action-panel').classList.add('hidden');
+
+      const def = ITEM_DEFS[itemId];
+      const popover = document.getElementById('item-popover');
+      document.getElementById('pop-name').textContent = def.name;
+      document.getElementById('pop-tag').textContent = def.tag;
+      document.getElementById('pop-desc').textContent = def.desc;
+      popover.classList.remove('hidden');
+
+      const slotEl = document.getElementById(`self-slot-${slotIdx}`);
+      const rect = slotEl
+        ? slotEl.getBoundingClientRect()
+        : { left: clientX || window.innerWidth / 2, bottom: clientY || window.innerHeight - 80, top: clientY || window.innerHeight - 120, width: 44 };
+
+      const popW = 224;
+      const popH = popover.offsetHeight || 112;
+      const margin = 10;
+
+      let left = rect.left + rect.width / 2 - popW / 2;
+      left = Math.max(margin, Math.min(window.innerWidth - popW - margin, left));
+
+      let top = rect.bottom + 8;
+      if (top + popH > window.innerHeight - margin) {
+        top = rect.top - popH - 8;
+      }
+      top = Math.max(margin, Math.min(window.innerHeight - popH - margin, top));
+
+      popover.style.left = `${left}px`;
+      popover.style.top = `${top}px`;
+
+      renderHud();
+    };
+
+    window.cancelSelectedItem = function () {
+      sfx.playClick(460);
+      state.selectedItemIdx = null;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      document.getElementById('item-popover').classList.add('hidden');
+      renderHud();
+    };
+
+    window.confirmSelectedItem = async function () {
+      if (state.selectedItemIdx === null) return;
+      const slotIdx = state.selectedItemIdx;
+      const me = getMyPlayer();
+      const itemId = me.items[slotIdx];
+
+      document.getElementById('item-popover').classList.add('hidden');
+      state.selectedItemIdx = null;
+
+      if (!itemId) return;
+      await executeItemUsage(me, slotIdx, itemId, false);
+    };
+
+    async function executeItemUsage(user, slotIdx, itemId, isStolen = false) {
+      const curHp = Number(user.hp) || 0;
+      const maxHp = Number(user.maxHp) || 4;
+      user.hp = curHp;
+      user.maxHp = maxHp;
+
+      // Prevent consuming healing items if already at max HP (unless Sudden Death cigarette burns)
+      if (!isStolen && (itemId === 'cigarette' || itemId === 'medicine') && curHp >= maxHp && !user.suddenDeath) {
+        sfx.playItemUse(false);
+        showTicker(`⚠️ 이미 최대 체력입니다! (${curHp}/${maxHp})`);
+        renderHud();
+        return;
+      }
+
+      if (!isStolen && slotIdx !== null) {
+        user.items.splice(slotIdx, 1);
+      }
+
+      let tickerMsg = '';
+      let needSync = state.mode === 'online';
+
+      switch (itemId) {
+        case 'magnifier': {
+          sfx.playItemUse(true);
+          const shell = state.shells[0];
+          tickerMsg = `🔍 ${user.name}이(가) 돋보기로 약실을 확인했습니다.`;
+          if (user.isAI) {
+            state.dealerKnownShell = shell;
+          } else if (user.uid === currentUserId) {
+            showIntelModal(
+              '🔍', '돋보기 약실 확인',
+              shell === 'live'
+                ? '<span class="text-red-500 text-lg">현재 약실: 실탄 (LIVE)</span>'
+                : '<span class="text-blue-400 text-lg">현재 약실: 공포탄 (BLANK)</span>'
+            );
+          }
+          break;
+        }
+
+        case 'beer': {
+          sfx.playPump();
+          const ejected = state.shells.shift();
+          state.dealerKnownShell = null;
+          const nextHints = {};
+          Object.keys(state.dealerPhoneHints).forEach(k => {
+            const idx = parseInt(k, 10) - 1;
+            if (idx >= 0) nextHints[idx] = state.dealerPhoneHints[k];
+          });
+          state.dealerPhoneHints = nextHints;
+
+          tickerMsg = `🍺 ${user.name}이(가) 맥주를 마시고 [${ejected === 'live' ? '실탄' : '공포탄'}]을 배출했습니다!`;
+          sync3DTableItems();
+          renderHud();
+
+          if (state.shells.length === 0) {
+            showTicker(tickerMsg);
+            if (state.mode === 'sp') {
+              setTimeout(() => startLoadSequence1P(), 1000);
+            } else if (currentRoomId) {
+              dispatchRoomAction(currentRoomId, { type: 'USE_ITEM', uid: currentUserId, slotIdx, itemId: 'beer' });
+            }
+            return;
+          }
+          break;
+        }
+
+        case 'cigarette': {
+          if (user.suddenDeath) {
+            sfx.playItemUse(false);
+            tickerMsg = `🚬 ${user.name}이(가) 담배를 피웠으나 제세동기 차단으로 회복 불가!`;
+          } else if (curHp < maxHp) {
+            sfx.playItemUse(true);
+            user.hp = Math.min(maxHp, curHp + 1);
+            triggerHealEffect(user.uid, curHp, user.hp);
+            tickerMsg = `🚬 ${user.name}이(가) 담배를 피워 체력 +1 회복! (${curHp} → ${user.hp})`;
+          } else {
+            sfx.playItemUse(false);
+            tickerMsg = `🚬 ${user.name}이(가) 담배를 피웠습니다. (최대 체력)`;
+          }
+          break;
+        }
+
+        case 'handsaw': {
+          if (state.sawedOff) {
+            sfx.playItemUse(false);
+            tickerMsg = `🪚 이미 총열이 잘려 있습니다!`;
+          } else {
+            sfx.playPump();
+            state.sawedOff = true;
+            tickerMsg = `🪚 ${user.name}이(가) 쇠톱으로 총열을 절단했습니다! (피해량 2배)`;
+          }
+          break;
+        }
+
+        case 'handcuffs': {
+          const opp = state.players.find(p => p.id !== user.id && !p.dead);
+          if (opp && !opp.skipped) {
+            sfx.playClick(420);
+            opp.skipped = true;
+            tickerMsg = `🔗 ${user.name}이(가) ${opp.name}에게 수갑을 채웠습니다! (다음 턴 스킵)`;
+          } else {
+            sfx.playItemUse(false);
+            tickerMsg = `🔗 상대가 이미 구속 상태입니다!`;
+          }
+          break;
+        }
+
+        case 'phone': {
+          sfx.playItemUse(true);
+          if (state.shells.length <= 1) {
+            tickerMsg = `📱 ${user.name}의 대포폰: 마지막 탄환입니다.`;
+            if (user.uid === currentUserId) {
+              showIntelModal('📱', '대포폰 수신', '<span class="text-amber-400">"남은 탄환이 1발뿐이다..."</span>');
+            }
+          } else {
+            const randIdx = Math.floor(Math.random() * state.shells.length);
+            const targetShell = state.shells[randIdx];
+            tickerMsg = `📱 ${user.name}이(가) 대포폰으로 탄환 정보를 수신했습니다.`;
+            if (user.isAI) {
+              state.dealerPhoneHints[randIdx] = targetShell;
+              if (randIdx === 0) state.dealerKnownShell = targetShell;
+            } else if (user.uid === currentUserId) {
+              const color = targetShell === 'live' ? 'text-red-500' : 'text-blue-400';
+              const label = targetShell === 'live' ? '실탄 (LIVE)' : '공포탄 (BLANK)';
+              showIntelModal('📱', '대포폰 익명 제보', `현재 기준 <span class="text-white underline">${randIdx + 1}번째 탄환</span>은<br><span class="${color} text-lg">${label}</span> 입니다.`);
+            }
+          }
+          break;
+        }
+
+        case 'inverter': {
+          sfx.playItemUse(true);
+          state.shells[0] = state.shells[0] === 'live' ? 'blank' : 'live';
+          if (user.isAI && state.dealerKnownShell) {
+            state.dealerKnownShell = state.dealerKnownShell === 'live' ? 'blank' : 'live';
+          } else {
+            state.dealerKnownShell = null;
+          }
+          tickerMsg = `🔄 ${user.name}이(가) 변환기를 작동해 현재 탄환 성질을 반전시켰습니다!`;
+          break;
+        }
+
+        case 'medicine': {
+          if (Math.random() < 0.5) {
+            sfx.playItemUse(true);
+            if (!user.suddenDeath && curHp < maxHp) {
+              user.hp = Math.min(maxHp, curHp + 2);
+              const gained = user.hp - curHp;
+              triggerHealEffect(user.uid, curHp, user.hp);
+              tickerMsg = `💊 기적! ${user.name}이(가) 약을 복용하고 체력 +${gained} 회복! (${curHp} → ${user.hp})`;
+            } else {
+              tickerMsg = `💊 ${user.name}이(가) 약을 복용했으나 회복할 수 없습니다!`;
+            }
+          } else {
+            sfx.playBlast();
+            triggerFlash('rgba(255, 42, 42, 0.4)');
+            user.hp = Math.max(0, curHp - 1);
+            tickerMsg = `💊 부작용! ${user.name}이(가) 상한 약을 먹고 체력 -1 감소!`;
+            if (user.hp === 0) {
+              user.dead = true;
+              showTicker(tickerMsg);
+              sync3DTableItems();
+              renderHud();
+              if (state.mode === 'sp') check1PEnd();
+              else if (currentRoomId) dispatchRoomAction(currentRoomId, { type: 'USE_ITEM', uid: currentUserId, slotIdx, itemId: 'medicine' });
+              return;
+            }
+          }
+          break;
+        }
+
+        case 'adrenaline': {
+          const hasStealable = state.players.some(
+            p => p.uid !== user.uid && !p.dead && p.items.some(it => it !== 'adrenaline')
+          );
+          if (!hasStealable) {
+            sfx.playItemUse(false);
+            tickerMsg = `💉 훔칠 수 있는 상대 아이템이 없습니다!`;
+          } else {
+            sfx.playItemUse(true);
+            state.stealingMode = true;
+            tickerMsg = `💉 아드레날린! 상대 아이템을 선택하세요!`;
+            needSync = false;
+          }
+          break;
+        }
+
+        case 'jammer': {
+          const targets = state.players.filter(p => p.uid !== user.uid && !p.dead && !p.skipped);
+          if (targets.length === 0) {
+            sfx.playItemUse(false);
+            tickerMsg = `📡 차단할 수 있는 상대가 없습니다!`;
+          } else if (targets.length === 1) {
+            sfx.playClick(380);
+            targets[0].skipped = true;
+            tickerMsg = `📡 ${user.name}이(가) ${targets[0].name}에게 재머를 사용해 다음 턴을 차단했습니다!`;
+          } else {
+            sfx.playItemUse(true);
+            state.jammerTargetingMode = true;
+            tickerMsg = `📡 재머 활성화! 턴을 차단할 상대를 선택하세요.`;
+            needSync = false;
+          }
+          break;
+        }
+
+        case 'remote': {
+          sfx.playItemUse(true);
+          state.turnDirection *= -1;
+          tickerMsg = `🎛️ ${user.name}이(가) 리모컨을 눌러 턴 순서를 반전시켰습니다!`;
+          break;
+        }
+      }
+
+      if (state.mode === 'online' && user.uid === currentUserId) {
+        state.localSyncRev += 1;
+        state.optimisticUntil = Date.now() + 2600;
+      }
+
+      showTicker(tickerMsg);
+      sync3DTableItems();
+      renderHud();
+
+      if (needSync && state.mode === 'online' && currentRoomId) {
+        dispatchRoomAction(currentRoomId, {
+          type: 'USE_ITEM',
+          uid: currentUserId,
+          slotIdx,
+          itemId
+        });
+      }
+    }
+
+    window.stealOpponentItem = async function (victimUid, itemIdx) {
+      if (!state.stealingMode) return;
+      const victim = state.players.find(p => p.uid === victimUid);
+      if (!victim) return;
+      const itemId = victim.items[itemIdx];
+      if (!itemId || itemId === 'adrenaline') {
+        sfx.playItemUse(false);
+        showTicker('⚠️ 아드레날린은 훔칠 수 없습니다!');
+        return;
+      }
+
+      state.stealingMode = false;
+      renderHud();
+
+      if (state.mode === 'online' && currentRoomId) {
+        victim.items.splice(itemIdx, 1);
+        const thief = getMyPlayer();
+        showTicker(`💉 ${thief.name}이(가) ${victim.name}의 [${ITEM_DEFS[itemId].name}]을(를) 훔쳐 사용합니다!`);
+        sync3DTableItems();
+        renderHud();
+        dispatchRoomAction(currentRoomId, {
+          type: 'STEAL_ITEM',
+          uid: currentUserId,
+          victimUid,
+          itemIdx
+        });
+        return;
+      }
+
+      victim.items.splice(itemIdx, 1);
+      const thief = getMyPlayer();
+      showTicker(`💉 ${thief.name}이(가) ${victim.name}의 [${ITEM_DEFS[itemId].name}]을(를) 훔쳐 사용합니다!`);
+      await executeItemUsage(thief, null, itemId, true);
+    };
+
+    window.applyJammerToPlayer = async function (targetUid) {
+      if (!state.jammerTargetingMode) return;
+      const target = state.players.find(p => p.uid === targetUid);
+      if (!target) return;
+      state.jammerTargetingMode = false;
+      target.skipped = true;
+      sfx.playClick(380);
+      const msg = `📡 ${getMyPlayer().name}이(가) ${target.name}에게 재머를 사용해 다음 턴을 차단했습니다!`;
+      showTicker(msg);
+      renderHud();
+      if (state.mode === 'online' && currentRoomId) {
+        dispatchRoomAction(currentRoomId, {
+          type: 'JAM_PLAYER',
+          uid: currentUserId,
+          targetUid
+        });
+      }
+    };
+
+    /* -----------------------------------------------------------
+       7. SHOTGUN AIMING & FIRING (WITH 1ST-PERSON POV CAMERA)
+    ----------------------------------------------------------- */
+    window.onPickupShotgunClick = function () {
+      const me = getMyPlayer();
+      const curr = getCurrentPlayer();
+      if (!me || !curr || me.uid !== curr.uid || state.isProcessing) return;
+
+      sfx.playClick(540);
+      window.cancelSelectedItem();
+      state.shotgunPickedUp = true;
+
+      shotgunTargetPos.set(0, 1.32, 2.35);
+      shotgunTargetRot.set(0, Math.PI / 2, 0.1);
+      setCameraAngle('shotgunReady');
+      renderShotgunTargets();
+    };
+
+    window.cancelShotgunAim = function () {
+      sfx.playClick(460);
+      state.shotgunPickedUp = false;
+      resetShotgun3DPose();
+      setCameraAngle('tableDefault');
+      document.getElementById('shotgun-action-panel').classList.add('hidden');
+    };
+
+    function resetShotgun3DPose() {
+      shotgunTargetPos.set(0, 0.34, 0.25);
+      shotgunTargetRot.set(0, 0, 0);
+      if (barrelTipMesh) barrelTipMesh.visible = !state.sawedOff;
+      if (sawedGlowRing) sawedGlowRing.visible = state.sawedOff;
+    }
+
+    function renderShotgunTargets() {
+      const panel = document.getElementById('shotgun-action-panel');
+      const box = document.getElementById('shotgun-targets-container');
+      const me = getMyPlayer();
+
+      if (!state.shotgunPickedUp) {
+        panel.classList.add('hidden');
+        return;
+      }
+
+      panel.classList.remove('hidden');
+      const alive = state.players.filter(p => !p.dead);
+      box.innerHTML = alive.map(t => {
+        const isSelf = t.uid === me.uid;
+        return `
+          <button
+            onmouseenter="previewAim3D(${isSelf})"
+            onclick="fireAtTarget('${t.uid}')"
+            class="px-3.5 py-2 ${isSelf ? 'bg-blue-600 hover:bg-blue-500 border-blue-400' : 'bg-red-600 hover:bg-red-500 border-red-400'} text-white font-bold rounded text-xs font-mono-crt shadow-lg border transition-transform hover:scale-105">
+            ${isSelf ? '🔄 나에게 쏘기 (공포탄 시 보너스 턴)' : `🎯 ${escapeHtml(t.name)} 쏘기`}
+          </button>
+        `;
+      }).join('');
+    }
+
+    window.previewAim3D = function (isSelf) {
+      if (!state.shotgunPickedUp) return;
+      if (isSelf) {
+        shotgunTargetPos.set(0, 1.48, 2.75);
+        shotgunTargetRot.set(0.32, -Math.PI / 2, -0.25);
+        setCameraAngle('aimAtSelf');
+      } else {
+        shotgunTargetPos.set(0, 1.32, 2.25);
+        shotgunTargetRot.set(0, Math.PI / 2, 0.1);
+        setCameraAngle('aimAtDealer');
+      }
+    };
+
+    window.fireAtTarget = async function (targetUid) {
+      if (state.isProcessing) return;
+      state.isProcessing = true;
+      state.shotgunPickedUp = false;
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      document.getElementById('shotgun-action-panel').classList.add('hidden');
+
+      const shooter = getCurrentPlayer();
+      const target = state.players.find(p => p.uid === targetUid);
+      const isSelf = shooter.uid === target.uid;
+      const shell = state.shells.shift();
+      const dmg = state.sawedOff ? 2 : 1;
+
+      state.sawedOff = false;
+      state.dealerKnownShell = null;
+      const nextHints = {};
+      Object.keys(state.dealerPhoneHints).forEach(k => {
+        const idx = parseInt(k, 10) - 1;
+        if (idx >= 0) nextHints[idx] = state.dealerPhoneHints[k];
+      });
+      state.dealerPhoneHints = nextHints;
+
+      if (shooter.isAI) {
+        setCameraAngle('dealerAction');
+        shotgunTargetPos.set(0, 1.65, -0.85);
+        shotgunTargetRot.set(0, isSelf ? Math.PI / 2 : -Math.PI / 2, 0);
+      } else {
+        window.previewAim3D(isSelf);
+      }
+
+      showTicker(`${shooter.name}이(가) ${isSelf ? '자신' : target.name}에게 방아쇠를 당깁니다...`);
+
+      setTimeout(async () => {
+        let resultMsg = '';
+        if (shell === 'live') {
+          sfx.playBlast();
+          triggerFlash('rgba(255, 25, 25, 0.6)');
+          document.body.classList.add('shake-now');
+          shotgunTargetPos.z += shooter.isAI ? -0.45 : 0.45;
+
+          target.hp = Math.max(0, (Number(target.hp) || 0) - dmg);
+          resultMsg = `💥 탕!! 실탄 발사! ${target.name}에게 ${dmg} 데미지!`;
+
+          if (state.mode === 'sp' && state.round === 3 && target.hp <= 2 && target.hp > 0 && !target.suddenDeath) {
+            target.suddenDeath = true;
+            resultMsg += ` ⚠️ ${target.name} 제세동기 차단!`;
+          }
+          if (target.hp === 0) target.dead = true;
+        } else {
+          sfx.playClick(840);
+          triggerFlash('rgba(41, 151, 255, 0.24)');
+          resultMsg = `*딸깍* — 공포탄이었습니다! ${isSelf ? `${shooter.name} 보너스 턴!` : ''}`;
+        }
+
+        showTicker(resultMsg);
+        sync3DTableItems();
+        renderHud();
+
+        setTimeout(async () => {
+          document.body.classList.remove('shake-now');
+          resetShotgun3DPose();
+          setCameraAngle('tableDefault');
+
+          const keepTurn = (shell === 'blank' && isSelf && !shooter.dead);
+
+          if (state.mode === 'sp') {
+            if (check1PEnd()) return;
+            if (state.shells.length === 0) {
+              if (!keepTurn) advanceLocalTurn();
+              else startLoadSequence1P();
+            } else {
+              if (!keepTurn) {
+                advanceLocalTurn();
+              } else {
+                state.isProcessing = false;
+                renderHud();
+                if (getCurrentPlayer().isAI) setTimeout(() => runDealerTurn(), 850);
+              }
+            }
+          } else if (currentRoomId) {
+            dispatchRoomAction(currentRoomId, {
+              type: 'FIRE_SHOTGUN',
+              uid: currentUserId,
+              targetUid
+            });
+          }
+        }, 1100);
+      }, 650);
+    };
+
+    function advanceLocalTurn() {
+      let guard = 0;
+      while (guard < state.players.length * 2) {
+        state.currentTurnIdx = (state.currentTurnIdx + state.turnDirection + state.players.length) % state.players.length;
+        const cand = state.players[state.currentTurnIdx];
+        if (cand.dead) { guard++; continue; }
+        if (cand.skipped) {
+          cand.skipped = false;
+          showTicker(`⛓️ ${cand.name}은(는) 구속 상태로 턴을 건너뜁니다!`);
+          guard++;
+          continue;
+        }
+        break;
+      }
+
+      if (state.shells.length === 0) {
+        startLoadSequence1P();
+        return;
+      }
+
+      state.isProcessing = false;
+      renderHud();
+
+      const next = getCurrentPlayer();
+      if (next.isAI) {
+        setTimeout(() => runDealerTurn(), 850);
+      } else {
+        showTicker(`${next.name}의 턴입니다.`);
+      }
+    }
+
+    function check1PEnd() {
+      const human = state.players[0];
+      const dealer = state.players[1];
+      if (human.dead) {
+        state.isProcessing = false;
+        showGameOver('사망 (ELIMINATED)', `라운드 ${state.round}에서 딜러의 산탄총에 쓰러졌습니다.`);
+        return true;
+      }
+      if (dealer.dead) {
+        if (state.round < state.maxRounds) {
+          showTicker(`🏆 라운드 ${state.round} 클리어! 다음 라운드로 이동합니다...`);
+          setTimeout(() => setupSingleplayerRound(state.round + 1), 1500);
+        } else {
+          state.isProcessing = false;
+          showGameOver('최종 승리! (VICTORY)', '3라운드를 모두 돌파하고 상금을 쟁취했습니다!');
+        }
+        return true;
+      }
+      return false;
+    }
+
+    /* -----------------------------------------------------------
+       8. RELIABLE, STEP-BY-STEP DEALER AI TURN LOOP
+    ----------------------------------------------------------- */
+    async function runDealerTurn() {
+      const dealer = getCurrentPlayer();
+      const human = state.players[0];
+      if (!dealer || !dealer.isAI || dealer.dead || human.dead) return;
+      if (state.isProcessing) return;
+
+      setCameraAngle('dealerAction');
+      renderHud();
+
+      const totalRem = state.shells.length;
+      if (totalRem === 0) return;
+
+      const liveRem = state.shells.filter(s => s === 'live').length;
+      const blankRem = state.shells.filter(s => s === 'blank').length;
+
+      if (liveRem === 0) state.dealerKnownShell = 'blank';
+      else if (blankRem === 0) state.dealerKnownShell = 'live';
+      else if (state.dealerPhoneHints[0]) state.dealerKnownShell = state.dealerPhoneHints[0];
+
+      // Step 1: Heal if injured
+      if (dealer.hp < dealer.maxHp && !dealer.suddenDeath) {
+        const cigIdx = dealer.items.indexOf('cigarette');
+        if (cigIdx !== -1) {
+          await executeItemUsage(dealer, cigIdx, 'cigarette');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        const medIdx = dealer.items.indexOf('medicine');
+        if (medIdx !== -1 && dealer.hp <= dealer.maxHp - 2) {
+          await executeItemUsage(dealer, medIdx, 'medicine');
+          if (!dealer.dead) return setTimeout(() => runDealerTurn(), 950);
+          return;
+        }
+      }
+
+      // Step 2: Inspect unknown shell
+      if (state.dealerKnownShell === null && totalRem > 1) {
+        const magIdx = dealer.items.indexOf('magnifier');
+        if (magIdx !== -1) {
+          await executeItemUsage(dealer, magIdx, 'magnifier');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        const phoneIdx = dealer.items.indexOf('phone');
+        if (phoneIdx !== -1) {
+          await executeItemUsage(dealer, phoneIdx, 'phone');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+      }
+
+      // Step 3: Steal helpful item from Player with Adrenaline
+      const adrIdx = dealer.items.indexOf('adrenaline');
+      if (adrIdx !== -1 && human.items.length > 0) {
+        const stealPriority = ['cigarette', 'magnifier', 'handsaw', 'handcuffs', 'inverter', 'beer'];
+        for (const targetItem of stealPriority) {
+          const victimIdx = human.items.indexOf(targetItem);
+          if (victimIdx !== -1) {
+            if (targetItem === 'cigarette' && (dealer.hp >= dealer.maxHp || dealer.suddenDeath)) continue;
+            if (targetItem === 'handsaw' && state.sawedOff) continue;
+            if (targetItem === 'handcuffs' && human.skipped) continue;
+
+            dealer.items.splice(adrIdx, 1);
+            human.items.splice(victimIdx, 1);
+            showTicker(`💉 딜러가 아드레날린을 사용해 당신의 [${ITEM_DEFS[targetItem].name}]을(를) 강탈했습니다!`);
+            await executeItemUsage(dealer, null, targetItem, true);
+            return setTimeout(() => runDealerTurn(), 1050);
+          }
+        }
+      }
+
+      // Step 4: Known BLANK -> Inverter or Shoot SELF
+      if (state.dealerKnownShell === 'blank') {
+        const invIdx = dealer.items.indexOf('inverter');
+        if (invIdx !== -1) {
+          await executeItemUsage(dealer, invIdx, 'inverter');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        return window.fireAtTarget(dealer.uid);
+      }
+
+      // Step 5: Known LIVE -> Handcuffs + Hand Saw -> Shoot PLAYER
+      if (state.dealerKnownShell === 'live') {
+        const cuffIdx = dealer.items.indexOf('handcuffs');
+        if (cuffIdx !== -1 && !human.skipped && totalRem > 1) {
+          await executeItemUsage(dealer, cuffIdx, 'handcuffs');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        const sawIdx = dealer.items.indexOf('handsaw');
+        if (sawIdx !== -1 && !state.sawedOff && human.hp >= 2) {
+          await executeItemUsage(dealer, sawIdx, 'handsaw');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        return window.fireAtTarget(human.uid);
+      }
+
+      // Step 6: Unknown shell probability tactics
+      const liveProb = liveRem / totalRem;
+      if (liveProb === 0.5 && dealer.items.includes('beer')) {
+        const beerIdx = dealer.items.indexOf('beer');
+        await executeItemUsage(dealer, beerIdx, 'beer');
+        if (state.shells.length > 0) {
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        return;
+      }
+
+      if (liveProb >= 0.5) {
+        const sawIdx = dealer.items.indexOf('handsaw');
+        if (sawIdx !== -1 && !state.sawedOff && liveProb >= 0.65 && human.hp >= 2) {
+          await executeItemUsage(dealer, sawIdx, 'handsaw');
+          return setTimeout(() => runDealerTurn(), 950);
+        }
+        window.fireAtTarget(human.uid);
+      } else {
+        window.fireAtTarget(dealer.uid);
+      }
+    }
+
+    /* -----------------------------------------------------------
+       9. ONLINE MULTIPLAYER STATE HELPERS (WITH OPTIMISTIC HEAL GUARD)
+    ----------------------------------------------------------- */
+    function applyOnlineState(room, isSpectator) {
+      const gs = room.gameState;
+      const incomingPlayers = (gs.players || []).map(p => ({
+        ...p,
+        hp: Number(p.hp) || 0,
+        maxHp: Number(p.maxHp) || 4,
+        items: Array.isArray(p.items) ? [...p.items] : []
+      }));
+
+      const isStaleLocalEcho =
+        (Date.now() < state.optimisticUntil && (gs.syncRev || 0) < state.localSyncRev);
+
+      if (isStaleLocalEcho && state.players.length > 0) {
+        const localSelf = state.players.find(p => p.uid === currentUserId);
+        const snapSelfIdx = incomingPlayers.findIndex(p => p.uid === currentUserId);
+        if (localSelf && snapSelfIdx !== -1) {
+          incomingPlayers[snapSelfIdx] = {
+            ...incomingPlayers[snapSelfIdx],
+            hp: Number(localSelf.hp) || 0,
+            maxHp: Number(localSelf.maxHp) || 4,
+            items: [...localSelf.items]
+          };
+        }
+      }
+
+      state.mode = 'online';
+      state.round = gs.round || 1;
+      state.players = incomingPlayers;
+      state.currentTurnIdx = gs.currentTurnIdx || 0;
+      state.turnDirection = gs.turnDirection || 1;
+      state.shells = gs.shells || [];
+      state.sawedOff = !!gs.sawedOff;
+
+      if (gs.lastHeal && gs.lastHeal.id !== state.lastHealId) {
+        state.lastHealId = gs.lastHeal.id;
+        triggerHealEffect(gs.lastHeal.uid, gs.lastHeal.fromIdx, gs.lastHeal.toIdx);
+      }
+
+      if (gs.lastEvent && gs.lastEvent.id !== state.lastEventId) {
+        state.lastEventId = gs.lastEvent.id;
+        if (gs.lastEvent.type === 'blast') {
+          sfx.playBlast();
+          triggerFlash('rgba(255, 25, 25, 0.55)');
+          document.body.classList.add('shake-now');
+          setTimeout(() => document.body.classList.remove('shake-now'), 420);
+        } else if (gs.lastEvent.type === 'blank') {
+          sfx.playClick(840);
+          triggerFlash('rgba(41, 151, 255, 0.22)');
+        }
+      }
+
+      if (gs.loadSeq && gs.loadSeq.id !== state.lastLoadId) {
+        state.lastLoadId = gs.loadSeq.id;
+        state.stealingMode = false;
+        state.jammerTargetingMode = false;
+        setCameraAngle('crtMonitor');
+        updateCrtScreenTexture('ONLINE LOAD', gs.loadSeq.liveCount, gs.loadSeq.blankCount);
+        sfx.playPump();
+        setTimeout(() => setCameraAngle('tableDefault'), 1800);
+      }
+
+      document.getElementById('hud-round-badge').textContent = `ONLINE // ${room.title}`;
+      document.getElementById('hud-dir-badge').classList.remove('hidden');
+      document.getElementById('hud-dir-badge').textContent = state.turnDirection === 1 ? '↻ 정방향' : '↺ 역방향';
+      document.getElementById('spectator-badge').classList.toggle('hidden', !isSpectator);
+
+      if (gs.ticker && !isStaleLocalEcho) showTicker(gs.ticker);
+
+      const curr = getCurrentPlayer();
+      state.isProcessing = isSpectator || !curr || curr.uid !== currentUserId;
+      if (state.isProcessing) {
+        state.stealingMode = false;
+        state.jammerTargetingMode = false;
+      }
+
+      resetShotgun3DPose();
+      sync3DTableItems();
+      renderHud();
+
+      if (room.status === 'finished' && gs.winnerName) {
+        state.stealingMode = false;
+        state.jammerTargetingMode = false;
+        renderHud();
+        showGameOver(`${gs.winnerName} 최종 승리!`, '온라인 데스매치가 종료되었습니다.');
+      }
+    }
+
+    /* -----------------------------------------------------------
+       10. COMPACT HUD RENDERING, HEAL VISUALS & GUIDE MODAL
+    ----------------------------------------------------------- */
+    function getCurrentPlayer() { return state.players[state.currentTurnIdx]; }
+    function getMyPlayer() {
+      if (state.mode === 'sp') return state.players[0];
+      return state.players.find(p => p.uid === currentUserId) || state.players[0];
+    }
+
+    function triggerHealEffect(targetUid, fromHp, toHp) {
+      triggerFlash('rgba(57, 255, 20, 0.28)');
+      setTimeout(() => {
+        const me = getMyPlayer();
+        if (me && me.uid === targetUid) {
+          const pips = document.querySelectorAll('#hud-self-hp .pip');
+          for (let i = fromHp; i < toHp; i++) {
+            if (pips[i]) {
+              pips[i].classList.remove('healed');
+              void pips[i].offsetWidth;
+              pips[i].classList.add('healed');
+            }
+          }
+        }
+      }, 30);
+    }
+
+    function renderHud() {
+      const me = getMyPlayer();
+      const curr = getCurrentPlayer();
+      if (!me || !curr) return;
+
+      if (barrelTipMesh) barrelTipMesh.visible = !state.sawedOff;
+      if (sawedGlowRing) sawedGlowRing.visible = state.sawedOff;
+
+      const isMyTurn = curr.uid === me.uid && !me.dead;
+      const isSpectator = !(state.players || []).some(p => p.uid === currentUserId);
+
+      // Sync Adrenaline & Jammer Neon Slow-Blinking Prompts
+      const stealPromptEl = document.getElementById('adrenaline-steal-prompt');
+      if (stealPromptEl) {
+        if (!isMyTurn || me.dead || isSpectator) state.stealingMode = false;
+        stealPromptEl.classList.toggle('hidden', !Boolean(state.stealingMode && isMyTurn && !isSpectator));
+      }
+      const jammerPromptEl = document.getElementById('jammer-target-prompt');
+      if (jammerPromptEl) {
+        if (!isMyTurn || me.dead || isSpectator) state.jammerTargetingMode = false;
+        jammerPromptEl.classList.toggle('hidden', !Boolean(state.jammerTargetingMode && isMyTurn && !isSpectator));
+      }
+
+      // Compact Opponent Cards
+      const oppBar = document.getElementById('opponents-hud-bar');
+      const opponents = state.players.filter(p => p.uid !== me.uid);
+      oppBar.innerHTML = opponents.map(opp => {
+        const isTurn = curr.uid === opp.uid;
+        return `
+          <div class="hud-glass px-2.5 py-1.5 ${isTurn ? 'border-amber-400' : ''} ${opp.dead ? 'opacity-40' : ''}">
+            <div class="flex items-center gap-2">
+              <span class="font-mono-crt font-bold text-xs text-amber-400">${escapeHtml(opp.name)}</span>
+              ${isTurn ? '<span class="text-[10px] font-mono-crt text-emerald-400 animate-pulse">●</span>' : ''}
+              ${opp.skipped ? '<span class="text-[9px] bg-red-900/80 text-red-300 px-1 rounded">차단</span>' : ''}
+              <div class="flex items-center gap-0.5">${renderPipsHtml(opp)}</div>
+              ${state.jammerTargetingMode && !opp.dead && !opp.skipped
+                ? `<button onclick="applyJammerToPlayer('${opp.uid}')" class="px-1.5 py-0.5 bg-indigo-600 text-white text-[10px] font-mono-crt rounded">📡 차단</button>`
+                : ''}
+            </div>
+            ${opp.items.length > 0 ? `
+              <div class="flex items-center gap-1 mt-1">
+                ${opp.items.map((itId, idx) => {
+                  const def = ITEM_DEFS[itId];
+                  const canSteal = state.stealingMode && itId !== 'adrenaline';
+                  return `
+                    <div ${canSteal ? `onclick="stealOpponentItem('${opp.uid}', ${idx})"` : ''}
+                      class="w-6 h-6 rounded bg-black/70 border border-neutral-700 flex items-center justify-center ${canSteal ? 'stealable' : ''}"
+                      title="${def.name}: ${def.desc}">
+                      ${def.svg}
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            ` : ''}
+          </div>
+        `;
+      }).join('');
+
+      // Self Compact Bar
+      document.getElementById('hud-self-name').textContent = me.name;
+      document.getElementById('hud-self-hp').innerHTML = renderPipsHtml(me);
+      document.getElementById('hud-shell-count').textContent = `${state.shells.length}발`;
+
+      const turnPill = document.getElementById('hud-turn-pill');
+      if (isSpectator) {
+        turnPill.textContent = `관전 · ${curr.name} 턴`;
+        turnPill.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono-crt bg-purple-900/60 border border-purple-400 text-purple-200';
+      } else if (me.dead) {
+        turnPill.textContent = '관전 중';
+        turnPill.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono-crt bg-red-900/50 border border-red-500 text-red-300';
+      } else if (isMyTurn) {
+        turnPill.textContent = '내 턴';
+        turnPill.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono-crt bg-emerald-500/20 border border-emerald-500 text-emerald-300';
+      } else {
+        turnPill.textContent = `${curr.name} 턴`;
+        turnPill.className = 'px-1.5 py-0.5 rounded text-[10px] font-mono-crt bg-neutral-800 border border-neutral-600 text-neutral-400';
+      }
+
+      document.getElementById('pickup-shotgun-btn').classList.toggle('hidden', isSpectator || !isMyTurn || state.isProcessing);
+
+      const grid = document.getElementById('hud-self-items');
+      let gridHtml = '';
+      for (let i = 0; i < 8; i++) {
+        const itId = me.items[i];
+        if (itId) {
+          const def = ITEM_DEFS[itId];
+          const isSel = state.selectedItemIdx === i;
+          gridHtml += `
+            <div id="self-slot-${i}" onclick="onHudItemClick(${i}, event.clientX, event.clientY)"
+              class="compact-slot has-item ${isSel ? 'selected-item' : ''}" title="${def.name}">
+              ${def.svg}
+              <span class="text-[8px] font-mono-crt text-neutral-300 truncate max-w-full px-0.5">${def.name}</span>
+            </div>
+          `;
+        } else {
+          gridHtml += `<div id="self-slot-${i}" class="compact-slot"></div>`;
+        }
+      }
+      grid.innerHTML = gridHtml;
+    }
+
+    function renderPipsHtml(player) {
+      const hp = Number(player.hp) || 0;
+      const maxHp = Number(player.maxHp) || 4;
+      let html = '';
+      for (let i = 0; i < maxHp; i++) {
+        const on = i < hp;
+        const cut = player.suddenDeath && on;
+        html += `<span class="pip ${on ? 'on' : ''} ${cut ? 'cut' : ''}">⚡</span>`;
+      }
+      return html;
+    }
+
+    function showTicker(msg) {
+      document.getElementById('hud-ticker').textContent = msg;
+    }
+
+    function triggerFlash(rgba) {
+      const el = document.getElementById('flash-overlay');
+      el.style.backgroundColor = rgba;
+      el.style.opacity = '1';
+      setTimeout(() => { el.style.opacity = '0'; }, 200);
+    }
+
+    function showIntelModal(icon, title, bodyHtml) {
+      document.getElementById('intel-icon').textContent = icon;
+      document.getElementById('intel-title').textContent = title;
+      document.getElementById('intel-body').innerHTML = bodyHtml;
+      document.getElementById('intel-modal').classList.remove('hidden');
+    }
+
+    window.closeIntelModal = function () {
+      sfx.playClick(500);
+      document.getElementById('intel-modal').classList.add('hidden');
+    };
+
+    function showGameOver(title, desc) {
+      document.getElementById('gameover-title').textContent = title;
+      document.getElementById('gameover-desc').textContent = desc;
+      document.getElementById('gameover-restart-btn').classList.toggle('hidden', state.mode === 'online');
+      const isOnlineHost = state.mode === 'online' && hostedRoomState && hostedRoomState.hostId === currentUserId;
+      document.getElementById('gameover-lobby-return-btn').classList.toggle('hidden', !isOnlineHost);
+      document.getElementById('gameover-modal').classList.remove('hidden');
+    }
+
+    window.restartCurrentGame = function () {
+      document.getElementById('gameover-modal').classList.add('hidden');
+      if (state.mode === 'sp') window.startSingleplayer();
+    };
+
+    window.exitToMenu = function () {
+      document.getElementById('gameover-modal').classList.add('hidden');
+      document.getElementById('item-popover').classList.add('hidden');
+      document.getElementById('shotgun-action-panel').classList.add('hidden');
+      document.getElementById('adrenaline-steal-prompt').classList.add('hidden');
+      document.getElementById('jammer-target-prompt').classList.add('hidden');
+      state.stealingMode = false;
+      state.jammerTargetingMode = false;
+      state.selectedItemIdx = null;
+      playerCrateGroup.visible = false;
+      dealerCrateGroup.visible = false;
+      setCameraAngle('tableDefault');
+
+      if (state.mode === 'online') {
+        window.leaveOnlineRoom();
+      } else {
+        document.getElementById('hud-layer').classList.add('hidden');
+        document.getElementById('menu-screen').classList.remove('hidden');
+      }
+    };
+
+    /* --- Organized 4-Tab Guide Modal --- */
+    window.openGuideModal = function () {
+      sfx.playClick(550);
+      document.getElementById('gcontent-items').innerHTML = Object.values(ITEM_DEFS).map(item => `
+        <div class="bg-[#0a0c0f] border border-[#22272e] rounded-lg p-2.5 flex items-start gap-2">
+          <div class="w-8 h-8 rounded bg-[#14171c] border border-[#2c323a] flex items-center justify-center shrink-0">
+            ${item.svg}
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-white text-xs">${item.name}</span>
+              <span class="text-[9px] font-mono-crt px-1 py-0.2 rounded bg-neutral-800 text-amber-400">${item.tag}</span>
+            </div>
+            <p class="text-[11px] text-neutral-400 mt-0.5 leading-snug">${item.desc}</p>
+          </div>
+        </div>
+      `).join('');
+      document.getElementById('guide-modal').classList.remove('hidden');
+    };
+
+    window.closeGuideModal = function () {
+      sfx.playClick(480);
+      document.getElementById('guide-modal').classList.add('hidden');
+    };
+
+    window.switchGuideTab = function (tab) {
+      ['rules', 'controls', 'items', 'modes'].forEach(t => {
+        document.getElementById(`gtab-${t}`).className = t === tab
+          ? 'py-2.5 border-b-2 border-emerald-400 text-emerald-400 font-bold'
+          : 'py-2.5 border-b-2 border-transparent text-neutral-400 hover:text-white';
+        document.getElementById(`gcontent-${t}`).classList.toggle('hidden', t !== tab);
+      });
+    };
+
+    /* -----------------------------------------------------------
+       11. BOOTSTRAP ON WINDOW LOAD
+    ----------------------------------------------------------- */
+    window.onload = function () {
+      initThreeScene();
+      requestAnimationFrame(animate3DLoop);
+      initOnlineBackend();
+    };
+  </script>
+</body>
+</html>
